@@ -5,7 +5,7 @@ import re
 import cv2
 import numpy as np
 from datetime import datetime
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 import easyocr
 from scipy import stats
 import requests
@@ -17,61 +17,36 @@ TELEGRAM_TOKEN = "7044109545:AAF_2u9_HqVGZzFIubnIWCQ3dFm7MyQfmWw"
 CHAT_ID = "5773032750"
 CSV_FILE = "crash_odds_PRO.csv"
 
-# قائمة proxies كبيرة (HTTP على 3129 + بعض SOCKS5) من مصادر 2026 محدثة
-# ابدأ بأول 20–30، لو عايز تضيف أكتر من قائمتك القديمة أضف
 PROXY_SERVERS = [
-    "118.193.37.241:3129",       # HK - حديث نسبي
-    "186.182.6.191:3129",        # AR
-    "176.105.220.74:3129",       # UA
-    "103.147.249.253:3129",      # IN Squid
-    "115.248.66.131:3129",       # IN Squid
-    "179.189.200.197:3129",      # BR
-    "89.175.0.74:3129",          # RU
-    "147.45.219.101:3129",       # RU Moscow Squid
-    "134.65.238.25:3129",        # BR Vinhedo Squid
-    "150.228.172.44:3129",       # TV Starlink Squid
-    "31.169.125.138:3129",       # US Secaucus
-    "190.183.210.74:3129",       # AR Posadas
-    "77.238.236.179:3129",       # NL Amsterdam
-    "193.108.112.37:3129",       # AL Tirana Squid
-    "37.233.83.29:3129",         # LV Riga
-    "51.210.118.23:3129",        # FR OVH Squid
-    "217.174.244.117:3129",      # GB UK Squid
-    "181.78.223.36:3129",        # MX
-    "178.207.11.148:3129",       # RU Kazan
-    "154.205.155.190:3129",      # US New York Squid
-    "178.205.101.67:3129",       # RU Kazan
-    "89.108.73.200:3129",        # RU
-    "119.110.233.203:3129",      # TH Bangkok Squid
-    "134.122.185.10:3129",       # SG
-    "198.186.131.124:3129",      # DE Frankfurt
-    "212.100.65.12:3129",        # NG Lagos HTTPS/Squid
-    "8.208.94.223:3129",         # GB London
-    "92.118.169.34:3129",        # NL Dronten SOCKS5
-    "146.190.16.167:3129",       # NL Amsterdam SOCKS5
-    "91.186.218.241:3129",       # SE Stockholm HTTPS/Squid
-
-    # بعض من قائمتك القديمة (لو عايز تضيف)
-    "104.207.40.177:3129",
-    "209.50.181.146:3129",
-    "209.50.168.67:3129",
-    "216.26.236.133:3129",
-    "217.181.91.74:3129",
-    "45.3.37.86:3129",
-    "104.207.54.191:3129",
-    "216.26.250.25:3129",
-    "65.111.15.200:3129",
-    "104.207.56.54:3129",
+    "118.193.37.241:3129",
+    "186.182.6.191:3129",
+    "176.105.220.74:3129",
+    "103.147.249.253:3129",
+    "115.248.66.131:3129",
+    "179.189.200.197:3129",
+    "89.175.0.74:3129",
+    "147.45.219.101:3129",
+    "134.65.238.25:3129",
+    "150.228.172.44:3129",
+    "31.169.125.138:3129",
+    "190.183.210.74:3129",
+    "77.238.236.179:3129",
+    "193.108.112.37:3129",
+    "37.233.83.29:3129",
+    "51.210.118.23:3129",
+    "217.174.244.117:3129",
+    "181.78.223.36:3129",
+    "178.207.11.148:3129",
+    "154.205.155.190:3129",
+    # أضف المزيد إذا أردت
 ]
 
-# تحويل لصيغة Playwright (معظمها HTTP، بعض SOCKS5 ممكن تغير server لـ socks5:// لو جربت)
 PROXIES = [{"server": f"http://{server}"} for server in PROXY_SERVERS]
 
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:129.0) Gecko/20100101 Firefox/129.0",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
 ]
 
 class CrashPredictor:
@@ -124,11 +99,11 @@ class CrashPredictor:
         confidence = min(0.92, 0.4 + len(recent)/200 + abs(streak_boost-1)*0.3)
 
         if final_pred > 4.0 and confidence > 0.8:
-            return "STRONG BUY", confidence, final_pred
+            return "🚀 STRONG BUY", confidence, final_pred
         elif final_pred > 2.4 and confidence > 0.7:
-            return "BUY", confidence, final_pred
+            return "✅ BUY", confidence, final_pred
         else:
-            return "WAIT", confidence, final_pred
+            return "⏳ WAIT", confidence, final_pred
 
 
 def preprocess_image(image):
@@ -170,7 +145,7 @@ def extract_odd_from_image(image_path):
 
         candidates = []
         for (_, text, conf) in all_texts:
-            if conf > 0.30:
+            if conf > 0.28:  # خفضنا شوية عشان نلتقط أكتر
                 match = re.search(r'(\d+\.?\d*)[xX]?', text, re.IGNORECASE)
                 if match:
                     try:
@@ -182,10 +157,10 @@ def extract_odd_from_image(image_path):
 
         if candidates:
             best = max(candidates, key=lambda x: x[1])
-            print(f"Best odd: {best[0]:.2f} (conf {best[1]:.2f}) from {image_path}")
+            print(f"Best: {best[0]:.2f}x (conf {best[1]:.2f}) from {os.path.basename(image_path)}")
             return f"{best[0]:.2f}"
         else:
-            print("No odd candidates")
+            print("No candidates found")
     except Exception as e:
         print(f"OCR error: {e}")
     return None
@@ -197,10 +172,10 @@ def send_telegram(message, image_paths=None):
     text_url = f"{base_url}/sendMessage"
     text_data = {"chat_id": CHAT_ID, "text": message, "parse_mode": "HTML"}
     try:
-        requests.post(text_url, data=text_data, timeout=10)
-        print("Text sent")
+        requests.post(text_url, data=text_data, timeout=15)
+        print("Text sent to Telegram")
     except Exception as e:
-        print(f"Text failed: {e}")
+        print(f"Telegram text failed: {e}")
 
     if image_paths:
         photo_url = f"{base_url}/sendPhoto"
@@ -209,11 +184,14 @@ def send_telegram(message, image_paths=None):
                 try:
                     with open(path, 'rb') as photo:
                         files = {'photo': photo}
-                        data = {'chat_id': CHAT_ID, 'caption': f"Debug {i+1}/{len(image_paths)}: {os.path.basename(path)}"}
-                        requests.post(photo_url, data=data, files=files, timeout=15)
+                        data = {
+                            'chat_id': CHAT_ID,
+                            'caption': f"Debug screenshot {i+1}/{len(image_paths)} - {os.path.basename(path)}"
+                        }
+                        requests.post(photo_url, data=data, files=files, timeout=20)
                     print(f"Photo {i+1} sent")
                     if i < len(image_paths) - 1:
-                        time.sleep(20)
+                        time.sleep(25)
                 except Exception as e:
                     print(f"Photo {i+1} failed: {e}")
 
@@ -256,14 +234,14 @@ def run_once():
     print(f"Loaded {len(predictor.odds_history)} historical odds")
 
     success = False
-    used_proxy = "No proxy"
+    used_proxy = "No proxy used"
 
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-dev-shm-usage'])
 
             random.shuffle(PROXIES)
-            for proxy_dict in PROXIES[:35]:  # جرب حتى 35 proxy
+            for proxy_dict in PROXIES[:30]:
                 proxy_str = proxy_dict["server"]
                 print(f"Trying proxy: {proxy_str}")
 
@@ -274,46 +252,73 @@ def run_once():
                         proxy=proxy_dict,
                         ignore_https_errors=True,
                         bypass_csp=True,
+                        java_script_enabled=True,
                     )
                     page = context.new_page()
 
-                    page.goto("https://1xbet.com/en/allgamesentrance/crash", wait_until="networkidle", timeout=90000)
-                    print(f"Success with proxy: {proxy_str}")
+                    page.goto(
+                        "https://1xbet.com/en/allgamesentrance/crash",
+                        wait_until="domcontentloaded",
+                        timeout=90000
+                    )
+
+                    # انتظر حالة DOM مستقرة
+                    try:
+                        page.wait_for_load_state("domcontentloaded", timeout=45000)
+                    except:
+                        pass
+
+                    print(f"Page loaded with proxy: {proxy_str}")
                     used_proxy = proxy_str.replace("http://", "")
                     success = True
                     break
+
                 except Exception as e:
-                    print(f"Proxy failed {proxy_str}: {str(e)[:80]}...")
+                    print(f"Proxy {proxy_str} failed: {str(e)[:120]}...")
                     continue
 
             if not success:
-                print("All proxies failed, trying direct...")
+                print("All proxies failed → trying direct connection")
                 context = browser.new_context(
                     user_agent=random.choice(USER_AGENTS),
-                    viewport={'width': 1920, 'height': 1080}
+                    viewport={'width': 1920, 'height': 1080},
+                    ignore_https_errors=True,
                 )
                 page = context.new_page()
-                page.goto("https://1xbet.com/en/allgamesentrance/crash", wait_until="networkidle", timeout=90000)
+                page.goto(
+                    "https://1xbet.com/en/allgamesentrance/crash",
+                    wait_until="domcontentloaded",
+                    timeout=90000
+                )
+                try:
+                    page.wait_for_load_state("domcontentloaded", timeout=45000)
+                except:
+                    pass
 
-            try:
-                page.wait_for_selector("canvas, [class*='multiplier'], .multiplier", timeout=60000)
-            except:
-                pass
+            # انتظر قليلاً بعد التحميل
+            time.sleep(random.uniform(8, 18))
 
-            time.sleep(random.uniform(15, 35))
-
+            # خد 3 سكرين شوت مع timeout أكبر
             screenshots = []
             for i in range(3):
                 path = f"debug_shot_{i+1}_{int(time.time())}.png"
-                page.screenshot(path=path, full_page=(i == 0))
-                screenshots.append(path)
+                try:
+                    page.screenshot(path=path, full_page=(i == 0), timeout=60000)
+                    screenshots.append(path)
+                    print(f"Screenshot {i+1} taken: {path}")
+                except PlaywrightTimeoutError:
+                    print(f"Screenshot {i+1} timed out - continuing anyway")
+                except Exception as e:
+                    print(f"Screenshot {i+1} error: {e}")
 
             odd = None
             for scr in screenshots:
-                detected = extract_odd_from_image(scr)
-                if detected:
-                    odd = detected
-                    break
+                if os.path.exists(scr):
+                    detected = extract_odd_from_image(scr)
+                    if detected:
+                        odd = detected
+                        print(f"Detected odd: {odd}x")
+                        break
 
             images_to_send = [p for p in screenshots if os.path.exists(p)]
 
@@ -336,7 +341,8 @@ Time: {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}
                 msg = f"""
 <b>NO ODD DETECTED</b> (Proxy: {used_proxy})
 
-Check screenshots attached
+Check attached screenshots
+Likely Access Denied or page didn't load properly
 Time: {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}
 """
                 send_telegram(msg, images_to_send)
@@ -344,8 +350,13 @@ Time: {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}
             browser.close()
 
     except Exception as e:
-        print(f"Critical error: {e}")
-        send_telegram(f"<b>CRASH BOT ERROR</b>\n{str(e)[:300]}")
+        print(f"Critical error: {str(e)}")
+        send_telegram(f"""
+<b>CRASH BOT CRITICAL ERROR</b>
+
+{str(e)[:400]}
+Time: {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}
+""")
 
 
 if __name__ == "__main__":
@@ -356,9 +367,9 @@ if __name__ == "__main__":
             print("Stopped by user")
             break
         except Exception as e:
-            print(f"Loop error: {e}")
-            time.sleep(60)  # تأخير صغير لو خطأ عام
+            print(f"Main loop error: {e}")
+            time.sleep(120)
 
-        wait = random.uniform(180, 360)  # 3-6 دقايق
-        print(f"Next run after ≈ {wait//60} min")
+        wait = random.uniform(240, 480)  # 4-8 دقائق
+        print(f"Next attempt in ≈ {wait//60:.0f} minutes")
         time.sleep(wait)
