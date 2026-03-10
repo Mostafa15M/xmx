@@ -95,12 +95,11 @@ def extract_odd_from_image(image_path):
         if img is None:
             return None
 
-        # مناطق محتملة أكثر للـ multiplier (عدلها بعد ما تشوف debug_full.png)
         regions = [
-            img[80:420,  550:1350],   # أوسع وأعلى
-            img[140:380, 750:1150],   # وسط الشاشة
-            img[180:480, 650:1250],   # أسفل شوية
-            img[220:520, 700:1200],   # المنطقة الأصلية مع توسيع
+            img[80:420,  550:1350],
+            img[140:380, 750:1150],
+            img[180:480, 650:1250],
+            img[220:520, 700:1200],
         ]
 
         all_texts = []
@@ -134,28 +133,35 @@ def extract_odd_from_image(image_path):
     return None
 
 
-def send_telegram(signal, confidence, current_odd, pred_odd):
-    emoji_map = {"🚀 STRONG BUY": "🔥", "✅ BUY": "💰", "⏳ WAIT": "⏳"}
-    emoji = emoji_map.get(signal, "⚠️")
+def send_telegram(message, image_paths=None):
+    base_url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
-    message = f"""
-{emoji} <b>CRASH SIGNAL</b> {emoji}
-
-💰 Current: <code>{current_odd}x</code>
-🎯 Target: <code>{pred_odd:.2f}x</code>
-📈 Signal: {signal}
-🎯 Conf: <code>{confidence:.1%}</code>
-
-⏰ {datetime.now().strftime('%H:%M:%S')}
-"""
-
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    data = {"chat_id": CHAT_ID, "text": message, "parse_mode": "HTML"}
+    # إرسال النص
+    text_url = f"{base_url}/sendMessage"
+    text_data = {
+        "chat_id": CHAT_ID,
+        "text": message,
+        "parse_mode": "HTML"
+    }
     try:
-        requests.post(url, data=data, timeout=10)
-        print("Telegram message sent successfully")
+        requests.post(text_url, data=text_data, timeout=10)
+        print("Text message sent")
     except Exception as e:
-        print(f"Telegram send failed: {e}")
+        print(f"Text send failed: {e}")
+
+    # إرسال الصور إذا وجدت
+    if image_paths:
+        photo_url = f"{base_url}/sendPhoto"
+        for path in image_paths:
+            if os.path.exists(path):
+                try:
+                    with open(path, 'rb') as photo:
+                        files = {'photo': photo}
+                        data = {'chat_id': CHAT_ID, 'caption': os.path.basename(path)}
+                        requests.post(photo_url, data=data, files=files, timeout=15)
+                    print(f"Photo sent: {path}")
+                except Exception as e:
+                    print(f"Photo send failed ({path}): {e}")
 
 
 def load_csv_data():
@@ -164,7 +170,7 @@ def load_csv_data():
         try:
             with open(CSV_FILE, 'r') as f:
                 reader = csv.reader(f)
-                next(reader, None)  # skip header
+                next(reader, None)
                 for row in reader:
                     if len(row) >= 2:
                         try:
@@ -184,16 +190,16 @@ def save_to_csv(odd):
             if not file_exists:
                 writer.writerow(['timestamp', 'odd'])
             writer.writerow([datetime.now().isoformat(), odd])
-        print(f"Saved odd {odd} to CSV")
+        print(f"Saved odd {odd}")
     except Exception as e:
-        print(f"CSV save error: {e}")
+        print(f"CSV error: {e}")
 
 
 def run_once():
     predictor = CrashPredictor()
     history = load_csv_data()
     predictor.odds_history.extend(history[-200:])
-    print(f"Loaded {len(predictor.odds_history)} historical odds")
+    print(f"Loaded {len(predictor.odds_history)} odds")
 
     try:
         with sync_playwright() as p:
@@ -207,18 +213,17 @@ def run_once():
             print("Connecting to 1xbet...")
             page.goto("https://1xbet.com/en/allgamesentrance/crash", wait_until="networkidle", timeout=60000)
 
-            print("Waiting for game to load...")
+            print("Waiting for game...")
             try:
                 page.wait_for_selector(
                     "canvas, [class*='multiplier'], .multiplier, div[class*='crash'], span[class*='crash'], [class*='plane']",
                     timeout=60000,
                     state="visible"
                 )
-                print("Game element found, waiting for animation...")
+                print("Element found, waiting animation...")
                 time.sleep(random.uniform(10, 15))
-            except Exception as e:
-                print(f"Selector timeout: {e}")
-                print("Waiting extra time anyway...")
+            except:
+                print("Timeout, waiting extra...")
                 time.sleep(15)
 
             print("Taking screenshots...")
@@ -228,21 +233,49 @@ def run_once():
 
             odd = extract_odd_from_image("temp_screenshot.png")
 
+            images_to_send = ["debug_full.png", "debug_viewport.png", "temp_screenshot.png"]
+
             if odd:
-                print(f"Detected odd: {odd}x")
+                print(f"Detected: {odd}x")
                 save_to_csv(odd)
                 predictor.add_odd(odd)
                 signal, confidence, pred_odd = predictor.predict()
-                print(f"Signal: {signal} | Conf: {confidence:.1%} | Pred: {pred_odd:.2f}x")
+                print(f"Signal: {signal} ({confidence:.1%})")
 
-                if "BUY" in signal:
-                    send_telegram(signal, confidence, odd, pred_odd)
+                msg = f"""
+<b>CRASH BOT RESULT</b>
+
+Odd: <code>{odd}x</code>
+Signal: {signal}
+Target: <code>{pred_odd:.2f}x</code>
+Conf: <code>{confidence:.1%}</code>
+Time: {datetime.now().strftime('%H:%M:%S')}
+"""
+
+                send_telegram(msg, images_to_send)
             else:
-                print("No odd detected – check debug_full.png & debug_viewport.png in repo")
+                print("No odd detected")
+                msg = f"""
+<b>CRASH BOT UPDATE</b>
+
+❌ No odd detected this run
+Check attached screenshots
+Time: {datetime.now().strftime('%H:%M:%S')}
+"""
+
+                send_telegram(msg, images_to_send)
 
             browser.close()
+
     except Exception as e:
-        print(f"Main execution error: {e}")
+        print(f"Error: {e}")
+        msg = f"""
+<b>CRASH BOT ERROR</b>
+
+Error: <code>{str(e)}</code>
+Time: {datetime.now().strftime('%H:%M:%S')}
+"""
+        send_telegram(msg)
 
 
 if __name__ == "__main__":
