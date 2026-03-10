@@ -1,7 +1,4 @@
-scipy
-requests
 playwright
-easyocr
+requests
 opencv-python-headless
 numpy
-requests
