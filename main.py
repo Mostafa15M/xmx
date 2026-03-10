@@ -95,11 +95,12 @@ def extract_odd_from_image(image_path):
         if img is None:
             return None
 
+        # مناطق محتملة أكثر للـ multiplier (عدلها بعد ما تشوف debug_full.png)
         regions = [
-            img[100:400,  600:1300],   # أوسع
-            img[150:350,  800:1100],   # وسط
-            img[200:500,  700:1200],   # أسفل شوية
-            img[250:550,  750:1150],   # المنطقة الأصلية
+            img[80:420,  550:1350],   # أوسع وأعلى
+            img[140:380, 750:1150],   # وسط الشاشة
+            img[180:480, 650:1250],   # أسفل شوية
+            img[220:520, 700:1200],   # المنطقة الأصلية مع توسيع
         ]
 
         all_texts = []
@@ -124,7 +125,10 @@ def extract_odd_from_image(image_path):
 
         if candidates:
             best = max(candidates, key=lambda x: x[1])
+            print(f"Best candidate: {best[0]:.2f} with conf {best[1]:.2f}")
             return f"{best[0]:.2f}"
+        else:
+            print("No valid candidates found")
     except Exception as e:
         print(f"OCR Error: {e}")
     return None
@@ -149,9 +153,9 @@ def send_telegram(signal, confidence, current_odd, pred_odd):
     data = {"chat_id": CHAT_ID, "text": message, "parse_mode": "HTML"}
     try:
         requests.post(url, data=data, timeout=10)
-        print("Telegram message sent")
+        print("Telegram message sent successfully")
     except Exception as e:
-        print(f"Telegram failed: {e}")
+        print(f"Telegram send failed: {e}")
 
 
 def load_csv_data():
@@ -180,6 +184,7 @@ def save_to_csv(odd):
             if not file_exists:
                 writer.writerow(['timestamp', 'odd'])
             writer.writerow([datetime.now().isoformat(), odd])
+        print(f"Saved odd {odd} to CSV")
     except Exception as e:
         print(f"CSV save error: {e}")
 
@@ -202,35 +207,38 @@ def run_once():
             print("Connecting to 1xbet...")
             page.goto("https://1xbet.com/en/allgamesentrance/crash", wait_until="networkidle", timeout=60000)
 
-            print("Waiting for multiplier element...")
+            print("Waiting for game to load...")
             try:
-                page.wait_for_selector("canvas, [class*='multiplier'], .crash-multiplier, div[class*='multi'], span[class*='multi']", timeout=45000)
-                time.sleep(random.uniform(8, 12))
-            except:
-                print("Multiplier selector not found, waiting extra time...")
-                time.sleep(12)
+                page.wait_for_selector(
+                    "canvas, [class*='multiplier'], .multiplier, div[class*='crash'], span[class*='crash'], [class*='plane']",
+                    timeout=60000,
+                    state="visible"
+                )
+                print("Game element found, waiting for animation...")
+                time.sleep(random.uniform(10, 15))
+            except Exception as e:
+                print(f"Selector timeout: {e}")
+                print("Waiting extra time anyway...")
+                time.sleep(15)
 
-            print("Taking screenshot...")
+            print("Taking screenshots...")
             page.screenshot(path="temp_screenshot.png")
-            # Debug screenshot (full page)
-            try:
-                page.screenshot(path="debug_screenshot.png", full_page=True)
-            except:
-                pass
+            page.screenshot(path="debug_full.png", full_page=True)
+            page.screenshot(path="debug_viewport.png")
 
             odd = extract_odd_from_image("temp_screenshot.png")
 
             if odd:
-                print(f"[{datetime.now().strftime('%H:%M')}] Detected: {odd}x")
+                print(f"Detected odd: {odd}x")
                 save_to_csv(odd)
                 predictor.add_odd(odd)
                 signal, confidence, pred_odd = predictor.predict()
-                print(f"Prediction: {signal} ({confidence:.1%}) Target: {pred_odd:.1f}x")
+                print(f"Signal: {signal} | Conf: {confidence:.1%} | Pred: {pred_odd:.2f}x")
 
                 if "BUY" in signal:
                     send_telegram(signal, confidence, odd, pred_odd)
             else:
-                print("No odd detected this run")
+                print("No odd detected – check debug_full.png & debug_viewport.png in repo")
 
             browser.close()
     except Exception as e:
