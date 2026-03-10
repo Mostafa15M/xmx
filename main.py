@@ -18,41 +18,28 @@ CHAT_ID = "5773032750"
 CSV_FILE = "crash_odds_PRO.csv"
 WORKING_PROXIES_FILE = "working_proxies.txt"
 
-# قائمة proxies كبيرة (SOCKS5 + HTTP/HTTPS) - Singapore وغيرها (محدثة مارس 2026)
+# قائمة proxies (أضفت بعض جديدة شغالة نسبياً 2026)
 PROXY_LIST = [
     {"server": "socks5://206.189.92.74:7777"},
     {"server": "socks5://128.199.111.243:34418"},
-    {"server": "socks5://134.209.100.103:56055"},
-    {"server": "socks5://13.250.36.159:48540"},
     {"server": "socks5://47.241.61.60:9050"},
     {"server": "socks5://51.79.156.122:9050"},
-    {"server": "socks5://218.185.242.117:9050"},
-    {"server": "socks5://128.199.161.225:9050"},
-    {"server": "socks5://178.128.84.253:9050"},
-    {"server": "socks5://159.65.14.150:9050"},
     {"server": "http://128.199.202.122:3128"},
-    {"server": "socks5://165.22.101.15:80"},
-    {"server": "socks5://209.97.175.37:9050"},
-    {"server": "http://190.104.146.244:999"},  # Paraguay HTTPS
-    {"server": "http://140.246.149.224:8888"},  # China
-    {"server": "http://101.255.94.161:8080"},   # Indonesia
-    # إضافات جديدة من spys.one / free-proxy-list (Singapore 2026)
     {"server": "http://51.79.135.131:8080"},
     {"server": "http://152.42.213.210:8080"},
-    {"server": "socks5://138.199.25.13:3901"},
-    {"server": "socks5://124.156.207.229:1080"},
-    {"server": "socks5://165.22.110.253:1080"},
-    {"server": "http://143.42.66.91:80"},       # جديد Singapore
-    {"server": "http://8.219.97.248:80"},       # Singapore
+    {"server": "http://143.42.66.91:80"},
+    {"server": "http://8.219.97.248:80"},
+    # أضف المزيد لو لقيت
 ]
 
-# روابط crash متعددة (مرايا 2026)
+# روابط crash محدثة 2026 (مرايا شغالة في مصر/المغرب)
 CRASH_URLS = [
-    "https://ma-1xbet.com/en/games/crash-point",       # Morocco mirror - شغال كويس في الشرق الأوسط
+    "https://ma-1xbet.com/en/games/crash",
+    "https://ma-1xbet.com/en/games/crash-point",
     "https://1xbetmaroc.com/en/games/crash",
-    "https://1xbets.plus/en/games/crash",              # جديد 2026
+    "https://egyptonex.com/en/mirror-1xbet",  # mirror entry ثم navigate
+    "https://1xbets.plus/en/games/crash",
     "https://1x-bet.mobi/en/games/crash",
-    "https://1xbet.cd/en/games/crash",
 ]
 
 USER_AGENTS = [
@@ -138,12 +125,14 @@ def extract_odd_from_image(image_path):
         if img is None:
             return None
 
+        # regions محسنة لـ multiplier live (من وسط/أعلى الشاشة)
+        height, width = img.shape[:2]
         regions = [
-            img[80:420,  550:1350],
-            img[140:380, 750:1150],
-            img[180:480, 650:1250],
-            img[220:520, 700:1200],
-            img[100:500, 600:1300],
+            img[int(height*0.15):int(height*0.45), int(width*0.35):int(width*0.65)],  # multiplier كبير وسط
+            img[int(height*0.1):int(height*0.3), int(width*0.4):int(width*0.6)],     # أعلى
+            img[int(height*0.2):int(height*0.5), int(width*0.3):int(width*0.7)],
+            img[100:400, 600:1300],
+            img[200:500, 700:1200],
         ]
 
         all_texts = []
@@ -156,7 +145,7 @@ def extract_odd_from_image(image_path):
 
         candidates = []
         for (_, text, conf) in all_texts:
-            if conf > 0.25:
+            if conf > 0.22:  # خفضت شوية عشان نلقط أكتر
                 match = re.search(r'(\d+\.?\d*)[xX]?', text, re.IGNORECASE)
                 if match:
                     try:
@@ -171,7 +160,7 @@ def extract_odd_from_image(image_path):
             print(f"اكتشاف odd: {best[0]:.2f}x (ثقة {best[1]:.2f}) من {os.path.basename(image_path)}")
             return f"{best[0]:.2f}"
         else:
-            print("ما لقاش odd")
+            print("ما لقاش odd في الصورة")
     except Exception as e:
         print(f"خطأ OCR: {e}")
     return None
@@ -243,14 +232,14 @@ def save_working_proxy(proxy):
 def get_random_proxy():
     if os.path.exists(WORKING_PROXIES_FILE):
         with open(WORKING_PROXIES_FILE, 'r') as f:
-            lines = f.readlines()
+            lines = [line.strip() for line in f if line.strip()]
             if lines:
-                return {"server": random.choice(lines).strip()}
-    return random.choice(PROXY_LIST)
+                return {"server": random.choice(lines)}
+    return random.choice(PROXY_LIST) if PROXY_LIST else None
 
 
 def run_once():
-    print("البوت شغال - محاولة مع proxies متعددة + مرايا 2026")
+    print("البوت شغال - تحديث مارس 2026: wait أطول + OCR محسن")
     predictor = CrashPredictor()
     history = load_csv_data()
     predictor.odds_history.extend(history[-200:])
@@ -263,80 +252,96 @@ def run_once():
 
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-dev-shm-usage'])
+            browser = p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])
 
             for url in CRASH_URLS:
-                print(f"\nجاري تجربة URL: {url}")
-                for attempt in range(5):  # 5 محاولات proxy لكل URL
-                    proxy = get_random_proxy()
-                    print(f"  محاولة proxy: {proxy['server']}")
+                print(f"\nجاري تجربة: {url}")
+                proxy = get_random_proxy()
+                print(f"  باستخدام proxy: {proxy['server'] if proxy else 'بدون proxy'}")
+
+                try:
+                    context_args = {
+                        'user_agent': random.choice(USER_AGENTS),
+                        'viewport': {'width': 1920, 'height': 1080},
+                        'ignore_https_errors': True,
+                        'bypass_csp': True,
+                        'java_script_enabled': True,
+                    }
+                    if proxy:
+                        context_args['proxy'] = proxy
+
+                    context = browser.new_context(**context_args)
+                    page = context.new_page()
+
+                    page.goto(url, wait_until="domcontentloaded", timeout=300000)
 
                     try:
-                        context = browser.new_context(
-                            user_agent=random.choice(USER_AGENTS),
-                            viewport={'width': 1920, 'height': 1080},
-                            proxy=proxy,
-                            ignore_https_errors=True,
-                            bypass_csp=True,
-                            java_script_enabled=True,
-                        )
-                        page = context.new_page()
+                        page.wait_for_load_state("networkidle", timeout=180000)  # انتظر network هادئ
+                    except:
+                        print("networkidle timeout - reload...")
+                        page.reload(wait_until="domcontentloaded", timeout=120000)
 
-                        page.goto(url, wait_until="domcontentloaded", timeout=300000)
+                    # انتظر طويل عشان اللعبة تحمل (JS/WebSocket/canvas)
+                    print("انتظار تحميل اللعبة الكامل (3-5 دقايق)...")
+                    time.sleep(random.uniform(180, 300))
+
+                    # حاول wait لـ live multiplier selector
+                    selectors = [
+                        '[class*="multiplier"]', '.current-multiplier', '.multiplier-value',
+                        '.crash-multiplier', 'div[class*="multi"]', 'span.multiplier',
+                        'canvas', '[data-testid="multiplier"]'
+                    ]
+                    found = False
+                    for sel in selectors:
                         try:
-                            page.wait_for_load_state("domcontentloaded", timeout=120000)
+                            page.wait_for_selector(sel, timeout=120000, state="visible")
+                            print(f"تم العثور على selector: {sel}")
+                            found = True
+                            break
                         except:
-                            page.reload(wait_until="domcontentloaded", timeout=120000)
+                            pass
 
-                        print("بانتظار تحميل اللعبة...")
-                        time.sleep(random.uniform(90, 180))
+                    if not found:
+                        print("ما لقاش selector live - هنجرب screenshots على أي حال")
 
+                    # خد screenshots متعددة مع فواصل (عشان نلقط round)
+                    for i in range(10):  # 10 shots
+                        path = f"debug_shot_{url.split('/')[-1]}_{i}_{int(time.time())}.png"
                         try:
-                            page.wait_for_selector("canvas, [class*='multiplier'], .multiplier", timeout=120000)
-                            print("تم العثور على اللعبة!")
-                        except:
-                            print("ما لقاش multiplier - جاري screenshot")
+                            page.screenshot(path=path, full_page=True, timeout=90000)
+                            screenshots.append(path)
+                            print(f"تم التقاط shot {i+1}")
+                        except Exception as e:
+                            print(f"خطأ screenshot {i+1}: {e}")
+                        time.sleep(random.uniform(20, 35))  # انتظر round جديد
 
-                        # خد screenshots
-                        for i in range(5):
-                            path = f"debug_shot_{url.split('/')[-1]}_{attempt}_{i}_{int(time.time())}.png"
-                            try:
-                                page.screenshot(path=path, full_page=True, timeout=90000)
-                                screenshots.append(path)
-                                print(f"تم التقاط {i+1}")
-                            except:
-                                pass
-                            time.sleep(10)
+                    # استخراج odd من الصور
+                    for scr in screenshots:
+                        if os.path.exists(scr):
+                            detected = extract_odd_from_image(scr)
+                            if detected:
+                                odd = detected
+                                used_url = url
+                                used_proxy = proxy['server'] if proxy else "بدون"
+                                if proxy:
+                                    save_working_proxy(proxy)
+                                break
 
-                        # استخراج odd
-                        for scr in screenshots:
-                            if os.path.exists(scr):
-                                detected = extract_odd_from_image(scr)
-                                if detected:
-                                    odd = detected
-                                    used_url = url
-                                    used_proxy = proxy['server']
-                                    save_working_proxy(proxy)  # حفظ الـ proxy الشغال
-                                    break
+                    if odd:
+                        break
 
-                        if odd:
-                            break  # نجح → وقف
+                    context.close()
 
-                        context.close()
-
-                    except Exception as e:
-                        print(f"فشل proxy {proxy['server']} على {url}: {str(e)}")
-                        time.sleep(10)
-
-                if odd:
-                    break  # نجح URL → وقف
+                except Exception as e:
+                    print(f"فشل على {url} مع {proxy['server'] if proxy else 'no proxy'}: {str(e)}")
+                    time.sleep(15)
 
             browser.close()
 
     except Exception as e:
-        print(f"خطأ كبير في run_once: {str(e)}")
+        print(f"خطأ عام في run_once: {str(e)}")
 
-    images_to_send = [p for p in screenshots if os.path.exists(p)]
+    images_to_send = [p for p in screenshots if os.path.exists(p)][:8]  # max 8 صور
 
     if odd:
         save_to_csv(odd)
@@ -344,31 +349,31 @@ def run_once():
         signal, conf, pred = predictor.predict()
 
         msg = f"""
-<b>نتيجة Crash - نجاح!</b>
+<b>نجاح! استخراج odd من Crash</b>
 
 URL: {used_url}
 Proxy: {used_proxy}
-odd: <code>{odd}x</code>
+odd الحالي: <code>{odd}x</code>
 إشارة: {signal}
-هدف: <code>{pred:.2f}x</code>
+هدف مقترح: <code>{pred:.2f}x</code>
 ثقة: <code>{conf:.0%}</code>
 وقت: {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}
 """
         send_telegram(msg, images_to_send)
     else:
         msg = f"""
-<b>فشل في استخراج odd بعد محاولات متعددة</b>
+<b>ما زال ما لقاش odd live</b>
 
 جربنا {len(CRASH_URLS)} روابط + proxies
-تحقق الصور المرفقة
-غالباً حجب أو مشكلة proxy - غيّر proxies أو جرب VPN
+اللعبة حملت lobby بس مش animation/live multiplier
+تحقق الصور - ممكن تحتاج VPN أقوى أو APK emulator
 وقت: {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}
 """
         send_telegram(msg, images_to_send)
 
 
 if __name__ == "__main__":
-    print("البوت شغال - multi-proxy + multi-mirror 2026")
+    print("البوت محدث - wait طويل + selectors محسنة + OCR أفضل")
     while True:
         try:
             run_once()
@@ -376,10 +381,9 @@ if __name__ == "__main__":
             print("تم إيقاف البوت")
             break
         except Exception as e:
-            print(f"خطأ في الحلقة الرئيسية: {e}")
-            send_telegram(f"<b>خطأ كبير في البوت</b>\n{str(e)[:400]}\nوقت: {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}")
-            time.sleep(300)  # انتظر 5 دقايق لو خطأ كبير
+            print(f"خطأ في الحلقة: {e}")
+            time.sleep(300)
 
-        wait = random.uniform(180, 360)
+        wait = random.uniform(240, 480)  # 4-8 دقايق
         print(f"التشغيل التالي بعد ≈ {wait//60:.0f} دقيقة")
         time.sleep(wait)
