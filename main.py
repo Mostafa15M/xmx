@@ -17,6 +17,15 @@ TELEGRAM_TOKEN = "7044109545:AAF_2u9_HqVGZzFIubnIWCQ3dFm7MyQfmWw"
 CHAT_ID = "5773032750"
 CSV_FILE = "crash_odds_PRO.csv"
 
+# قائمة بروكسيات سنغافورة (SG) حديثة – جرب واحد واحد لو واحد فشل، غيّر أو أضف من free-proxy-list.net
+PROXIES = [
+    "http://51.79.135.131:8080",      # SG - Anonymous - حديث
+    "http://143.42.66.91:80",         # SG - Anonymous - DigitalOcean SG
+    "http://156.146.56.231:8081",     # SG - Anonymous - Datacamp SG
+    "http://103.174.102.183:80",      # SG - احتياطي
+    "http://103.174.102.127:3128",    # SG - احتياطي
+]
+
 class CrashPredictor:
     def __init__(self):
         self.odds_history = deque(maxlen=200)
@@ -33,9 +42,9 @@ class CrashPredictor:
     def update_streaks(self, odd):
         self.streaks = {'low': 0, 'mid': 0, 'high': 0}
         for o in list(self.odds_history)[-10:]:
-            if o < 2.0:    self.streaks['low'] += 1
-            elif o < 5.0:  self.streaks['mid'] += 1
-            else:          self.streaks['high'] += 1
+            if o < 2.0: self.streaks['low'] += 1
+            elif o < 5.0: self.streaks['mid'] += 1
+            else: self.streaks['high'] += 1
 
     def predict(self):
         if len(self.odds_history) < 15:
@@ -59,7 +68,7 @@ class CrashPredictor:
         predictions.append(ema * 1.1)
 
         streak_boost = 1.0
-        if self.streaks['low'] >= 5:  streak_boost = 2.2
+        if self.streaks['low'] >= 5: streak_boost = 2.2
         elif self.streaks['low'] >= 3: streak_boost = 1.6
         elif self.streaks['high'] >= 4: streak_boost = 0.75
 
@@ -124,44 +133,50 @@ def extract_odd_from_image(image_path):
 
         if candidates:
             best = max(candidates, key=lambda x: x[1])
-            print(f"Best candidate: {best[0]:.2f} with conf {best[1]:.2f}")
+            print(f"Best: {best[0]:.2f} conf {best[1]:.2f}")
             return f"{best[0]:.2f}"
         else:
-            print("No valid candidates found")
+            print("No candidates")
     except Exception as e:
-        print(f"OCR Error: {e}")
+        print(f"OCR error: {e}")
     return None
 
 
 def send_telegram(message, image_paths=None):
     base_url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
-    # إرسال النص
+    # إرسال النص أولاً
     text_url = f"{base_url}/sendMessage"
-    text_data = {
-        "chat_id": CHAT_ID,
-        "text": message,
-        "parse_mode": "HTML"
-    }
+    text_data = {"chat_id": CHAT_ID, "text": message, "parse_mode": "HTML"}
     try:
         requests.post(text_url, data=text_data, timeout=10)
-        print("Text message sent")
+        print("Text sent")
     except Exception as e:
-        print(f"Text send failed: {e}")
+        print(f"Text failed: {e}")
 
-    # إرسال الصور إذا وجدت
+    # إرسال الصور واحدة واحدة بتأخير 30 ثانية بينهم
     if image_paths:
         photo_url = f"{base_url}/sendPhoto"
-        for path in image_paths:
+        for i, path in enumerate(image_paths):
             if os.path.exists(path):
                 try:
                     with open(path, 'rb') as photo:
                         files = {'photo': photo}
-                        data = {'chat_id': CHAT_ID, 'caption': os.path.basename(path)}
+                        data = {
+                            'chat_id': CHAT_ID,
+                            'caption': f"Debug screenshot {i+1}/{len(image_paths)}: {os.path.basename(path)}"
+                        }
                         requests.post(photo_url, data=data, files=files, timeout=15)
-                    print(f"Photo sent: {path}")
+                    print(f"Photo {i+1} sent: {path}")
+
+                    # تأخير 30 ثانية بين الصور (ما عدا الأخيرة)
+                    if i < len(image_paths) - 1:
+                        print("Waiting 30 seconds before next photo...")
+                        time.sleep(30)
                 except Exception as e:
-                    print(f"Photo send failed ({path}): {e}")
+                    print(f"Photo {i+1} failed ({path}): {e}")
+            else:
+                print(f"Photo not found: {path}")
 
 
 def load_csv_data():
@@ -190,7 +205,7 @@ def save_to_csv(odd):
             if not file_exists:
                 writer.writerow(['timestamp', 'odd'])
             writer.writerow([datetime.now().isoformat(), odd])
-        print(f"Saved odd {odd}")
+        print(f"Saved odd: {odd}")
     except Exception as e:
         print(f"CSV error: {e}")
 
@@ -199,34 +214,52 @@ def run_once():
     predictor = CrashPredictor()
     history = load_csv_data()
     predictor.odds_history.extend(history[-200:])
-    print(f"Loaded {len(predictor.odds_history)} odds")
+    print(f"Loaded {len(predictor.odds_history)} historical odds")
+
+    success = False
+    used_proxy = "No proxy used"
 
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-dev-shm-usage'])
-            context = browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-                viewport={'width': 1920, 'height': 1080}
-            )
-            page = context.new_page()
 
-            print("Connecting to 1xbet...")
-            page.goto("https://1xbet.com/en/allgamesentrance/crash", wait_until="networkidle", timeout=60000)
+            # محاولة كل بروكسي
+            for proxy in PROXIES:
+                print(f"Trying proxy: {proxy}")
+                try:
+                    context = browser.new_context(
+                        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+                        viewport={'width': 1920, 'height': 1080},
+                        proxy={"server": proxy}
+                    )
+                    page = context.new_page()
+
+                    page.goto("https://1xbet.com/en/allgamesentrance/crash", wait_until="networkidle", timeout=60000)
+                    print(f"Success with proxy: {proxy}")
+                    used_proxy = proxy
+                    success = True
+                    break
+                except Exception as e:
+                    print(f"Proxy {proxy} failed: {e}")
+                    continue
+
+            # لو فشل الكل، جرب بدون
+            if not success:
+                print("All proxies failed, trying direct...")
+                context = browser.new_context(
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+                    viewport={'width': 1920, 'height': 1080}
+                )
+                page = context.new_page()
+                page.goto("https://1xbet.com/en/allgamesentrance/crash", wait_until="networkidle", timeout=60000)
 
             print("Waiting for game...")
             try:
-                page.wait_for_selector(
-                    "canvas, [class*='multiplier'], .multiplier, div[class*='crash'], span[class*='crash'], [class*='plane']",
-                    timeout=60000,
-                    state="visible"
-                )
-                print("Element found, waiting animation...")
+                page.wait_for_selector("canvas, [class*='multiplier'], .multiplier", timeout=60000)
                 time.sleep(random.uniform(10, 15))
             except:
-                print("Timeout, waiting extra...")
                 time.sleep(15)
 
-            print("Taking screenshots...")
             page.screenshot(path="temp_screenshot.png")
             page.screenshot(path="debug_full.png", full_page=True)
             page.screenshot(path="debug_viewport.png")
@@ -240,12 +273,12 @@ def run_once():
                 save_to_csv(odd)
                 predictor.add_odd(odd)
                 signal, confidence, pred_odd = predictor.predict()
-                print(f"Signal: {signal} ({confidence:.1%})")
+                print(f"Signal: {signal} Conf: {confidence:.1%}")
 
                 msg = f"""
-<b>CRASH BOT RESULT</b>
+<b>CRASH BOT RESULT</b> (Proxy: {used_proxy})
 
-Odd: <code>{odd}x</code>
+Current: <code>{odd}x</code>
 Signal: {signal}
 Target: <code>{pred_odd:.2f}x</code>
 Conf: <code>{confidence:.1%}</code>
@@ -256,10 +289,10 @@ Time: {datetime.now().strftime('%H:%M:%S')}
             else:
                 print("No odd detected")
                 msg = f"""
-<b>CRASH BOT UPDATE</b>
+<b>CRASH BOT UPDATE</b> (Proxy: {used_proxy})
 
-❌ No odd detected this run
-Check attached screenshots
+❌ No odd detected
+Check screenshots
 Time: {datetime.now().strftime('%H:%M:%S')}
 """
 
@@ -268,11 +301,12 @@ Time: {datetime.now().strftime('%H:%M:%S')}
             browser.close()
 
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Critical error: {e}")
         msg = f"""
 <b>CRASH BOT ERROR</b>
 
 Error: <code>{str(e)}</code>
+Proxy: {used_proxy}
 Time: {datetime.now().strftime('%H:%M:%S')}
 """
         send_telegram(msg)
