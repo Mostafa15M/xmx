@@ -1,0 +1,7 @@
+playwright
+opencv-python-headless
+easyocr
+numpy
+scipy
+requests
+torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
