@@ -17,14 +17,33 @@ TELEGRAM_TOKEN = "7044109545:AAF_2u9_HqVGZzFIubnIWCQ3dFm7MyQfmWw"
 CHAT_ID = "5773032750"
 CSV_FILE = "crash_odds_PRO.csv"
 
-# قائمة بروكسيات سنغافورة (SG) حديثة – جرب واحد واحد لو واحد فشل، غيّر أو أضف من free-proxy-list.net
-PROXIES = [
-    "http://51.79.135.131:8080",      # SG - Anonymous - حديث
-    "http://143.42.66.91:80",         # SG - Anonymous - DigitalOcean SG
-    "http://156.146.56.231:8081",     # SG - Anonymous - Datacamp SG
-    "http://103.174.102.183:80",      # SG - احتياطي
-    "http://103.174.102.127:3128",    # SG - احتياطي
+# New authenticated proxies (format: ip:port:username:password)
+PROXY_LIST = [
+    "31.59.20.176:6754:czknejpx:rl4iurmboxxi",
+    "23.95.150.145:6114:czknejpx:rl4iurmboxxi",
+    "198.23.239.134:6540:czknejpx:rl4iurmboxxi",
+    "45.38.107.97:6014:czknejpx:rl4iurmboxxi",
+    "107.172.163.27:6543:czknejpx:rl4iurmboxxi",
+    "198.105.121.200:6462:czknejpx:rl4iurmboxxi",
+    "64.137.96.74:6641:czknejpx:rl4iurmboxxi",
+    "216.10.27.159:6837:czknejpx:rl4iurmboxxi",
+    "142.111.67.146:5611:czknejpx:rl4iurmboxxi",
+    "194.39.32.164:6461:czknejpx:rl4iurmboxxi",
 ]
+
+# Convert string list → proper proxy dicts for Playwright
+PROXIES = []
+for entry in PROXY_LIST:
+    try:
+        ip_port, user, pw = entry.rsplit(":", 2)
+        ip, port = ip_port.split(":")
+        PROXIES.append({
+            "server": f"http://{ip}:{port}",
+            "username": user,
+            "password": pw
+        })
+    except:
+        print(f"Bad proxy format → skipped: {entry}")
 
 class CrashPredictor:
     def __init__(self):
@@ -82,6 +101,10 @@ class CrashPredictor:
         else:
             return "⏳ WAIT", confidence, final_pred
 
+
+# ────────────────────────────────────────────────
+#  The rest of your functions remain unchanged
+# ────────────────────────────────────────────────
 
 def preprocess_image(image):
     lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
@@ -145,7 +168,7 @@ def extract_odd_from_image(image_path):
 def send_telegram(message, image_paths=None):
     base_url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
-    # إرسال النص أولاً
+    # Send text first
     text_url = f"{base_url}/sendMessage"
     text_data = {"chat_id": CHAT_ID, "text": message, "parse_mode": "HTML"}
     try:
@@ -154,7 +177,7 @@ def send_telegram(message, image_paths=None):
     except Exception as e:
         print(f"Text failed: {e}")
 
-    # إرسال الصور واحدة واحدة بتأخير 30 ثانية بينهم
+    # Send screenshots one by one with delay
     if image_paths:
         photo_url = f"{base_url}/sendPhoto"
         for i, path in enumerate(image_paths):
@@ -169,7 +192,6 @@ def send_telegram(message, image_paths=None):
                         requests.post(photo_url, data=data, files=files, timeout=15)
                     print(f"Photo {i+1} sent: {path}")
 
-                    # تأخير 30 ثانية بين الصور (ما عدا الأخيرة)
                     if i < len(image_paths) - 1:
                         print("Waiting 30 seconds before next photo...")
                         time.sleep(30)
@@ -223,29 +245,31 @@ def run_once():
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-dev-shm-usage'])
 
-            # محاولة كل بروكسي
-            for proxy in PROXIES:
-                print(f"Trying proxy: {proxy}")
+            # Try each authenticated proxy
+            for proxy_dict in PROXIES:
+                proxy_str = proxy_dict["server"].replace("http://", "")
+                print(f"Trying proxy: {proxy_str}  user={proxy_dict['username']}")
+
                 try:
                     context = browser.new_context(
                         user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
                         viewport={'width': 1920, 'height': 1080},
-                        proxy={"server": proxy}
+                        proxy=proxy_dict
                     )
                     page = context.new_page()
 
                     page.goto("https://1xbet.com/en/allgamesentrance/crash", wait_until="networkidle", timeout=60000)
-                    print(f"Success with proxy: {proxy}")
-                    used_proxy = proxy
+                    print(f"Success with proxy: {proxy_str}")
+                    used_proxy = proxy_str
                     success = True
                     break
                 except Exception as e:
-                    print(f"Proxy {proxy} failed: {e}")
+                    print(f"Proxy {proxy_str} failed: {e}")
                     continue
 
-            # لو فشل الكل، جرب بدون
+            # Fallback: no proxy
             if not success:
-                print("All proxies failed, trying direct...")
+                print("All proxies failed → trying direct connection...")
                 context = browser.new_context(
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
                     viewport={'width': 1920, 'height': 1080}
@@ -253,7 +277,7 @@ def run_once():
                 page = context.new_page()
                 page.goto("https://1xbet.com/en/allgamesentrance/crash", wait_until="networkidle", timeout=60000)
 
-            print("Waiting for game...")
+            print("Waiting for game canvas / multiplier...")
             try:
                 page.wait_for_selector("canvas, [class*='multiplier'], .multiplier", timeout=60000)
                 time.sleep(random.uniform(10, 15))
