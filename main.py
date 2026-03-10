@@ -16,9 +16,44 @@ from collections import deque
 TELEGRAM_TOKEN = "7044109545:AAF_2u9_HqVGZzFIubnIWCQ3dFm7MyQfmWw"
 CHAT_ID = "5773032750"
 CSV_FILE = "crash_odds_PRO.csv"
+WORKING_PROXIES_FILE = "working_proxies.txt"
 
-# الـ proxy الثابت اللي نجح قبل كده
-FIXED_PROXY = {"server": "http://186.182.6.191:3129"}
+# قائمة proxies كبيرة (SOCKS5 + HTTP/HTTPS) - Singapore وغيرها (محدثة مارس 2026)
+PROXY_LIST = [
+    {"server": "socks5://206.189.92.74:7777"},
+    {"server": "socks5://128.199.111.243:34418"},
+    {"server": "socks5://134.209.100.103:56055"},
+    {"server": "socks5://13.250.36.159:48540"},
+    {"server": "socks5://47.241.61.60:9050"},
+    {"server": "socks5://51.79.156.122:9050"},
+    {"server": "socks5://218.185.242.117:9050"},
+    {"server": "socks5://128.199.161.225:9050"},
+    {"server": "socks5://178.128.84.253:9050"},
+    {"server": "socks5://159.65.14.150:9050"},
+    {"server": "http://128.199.202.122:3128"},
+    {"server": "socks5://165.22.101.15:80"},
+    {"server": "socks5://209.97.175.37:9050"},
+    {"server": "http://190.104.146.244:999"},  # Paraguay HTTPS
+    {"server": "http://140.246.149.224:8888"},  # China
+    {"server": "http://101.255.94.161:8080"},   # Indonesia
+    # إضافات جديدة من spys.one / free-proxy-list (Singapore 2026)
+    {"server": "http://51.79.135.131:8080"},
+    {"server": "http://152.42.213.210:8080"},
+    {"server": "socks5://138.199.25.13:3901"},
+    {"server": "socks5://124.156.207.229:1080"},
+    {"server": "socks5://165.22.110.253:1080"},
+    {"server": "http://143.42.66.91:80"},       # جديد Singapore
+    {"server": "http://8.219.97.248:80"},       # Singapore
+]
+
+# روابط crash متعددة (مرايا 2026)
+CRASH_URLS = [
+    "https://ma-1xbet.com/en/games/crash-point",       # Morocco mirror - شغال كويس في الشرق الأوسط
+    "https://1xbetmaroc.com/en/games/crash",
+    "https://1xbets.plus/en/games/crash",              # جديد 2026
+    "https://1x-bet.mobi/en/games/crash",
+    "https://1xbet.cd/en/games/crash",
+]
 
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
@@ -200,114 +235,140 @@ def save_to_csv(odd):
         print(f"خطأ CSV: {e}")
 
 
+def save_working_proxy(proxy):
+    with open(WORKING_PROXIES_FILE, 'a') as f:
+        f.write(f"{proxy['server']}\n")
+
+
+def get_random_proxy():
+    if os.path.exists(WORKING_PROXIES_FILE):
+        with open(WORKING_PROXIES_FILE, 'r') as f:
+            lines = f.readlines()
+            if lines:
+                return {"server": random.choice(lines).strip()}
+    return random.choice(PROXY_LIST)
+
+
 def run_once():
-    print("البوت شغال بالـ proxy الثابت + رابط Crash مباشر")
+    print("البوت شغال - محاولة مع proxies متعددة + مرايا 2026")
     predictor = CrashPredictor()
     history = load_csv_data()
     predictor.odds_history.extend(history[-200:])
     print(f"تم تحميل {len(predictor.odds_history)} odd سابقة")
 
+    odd = None
+    screenshots = []
+    used_url = ""
+    used_proxy = ""
+
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-dev-shm-usage'])
 
-            context = browser.new_context(
-                user_agent=random.choice(USER_AGENTS),
-                viewport={'width': 1920, 'height': 1080},
-                proxy=FIXED_PROXY,
-                ignore_https_errors=True,
-                bypass_csp=True,
-                java_script_enabled=True,
-            )
-            page = context.new_page()
+            for url in CRASH_URLS:
+                print(f"\nجاري تجربة URL: {url}")
+                for attempt in range(5):  # 5 محاولات proxy لكل URL
+                    proxy = get_random_proxy()
+                    print(f"  محاولة proxy: {proxy['server']}")
 
-            CRASH_URL = "https://1xbet.cd/en/games/crash"
+                    try:
+                        context = browser.new_context(
+                            user_agent=random.choice(USER_AGENTS),
+                            viewport={'width': 1920, 'height': 1080},
+                            proxy=proxy,
+                            ignore_https_errors=True,
+                            bypass_csp=True,
+                            java_script_enabled=True,
+                        )
+                        page = context.new_page()
 
-            print(f"جاري الدخول على: {CRASH_URL}")
-            page.goto(
-                CRASH_URL,
-                wait_until="domcontentloaded",
-                timeout=180000
-            )
+                        page.goto(url, wait_until="domcontentloaded", timeout=300000)
+                        try:
+                            page.wait_for_load_state("domcontentloaded", timeout=120000)
+                        except:
+                            page.reload(wait_until="domcontentloaded", timeout=120000)
 
-            try:
-                page.wait_for_load_state("domcontentloaded", timeout=90000)
-                print("الصفحة حملت")
-            except:
-                print("مشكلة تحميل - إعادة محاولة...")
-                page.reload(wait_until="domcontentloaded", timeout=90000)
+                        print("بانتظار تحميل اللعبة...")
+                        time.sleep(random.uniform(90, 180))
 
-            print("بانتظار تحميل اللعبة...")
-            time.sleep(random.uniform(60, 120))
+                        try:
+                            page.wait_for_selector("canvas, [class*='multiplier'], .multiplier", timeout=120000)
+                            print("تم العثور على اللعبة!")
+                        except:
+                            print("ما لقاش multiplier - جاري screenshot")
 
-            try:
-                page.wait_for_selector("canvas, [class*='multiplier'], .multiplier", timeout=120000)
-                print("تم العثور على اللعبة!")
-            except:
-                print("ما لقاش multiplier")
+                        # خد screenshots
+                        for i in range(5):
+                            path = f"debug_shot_{url.split('/')[-1]}_{attempt}_{i}_{int(time.time())}.png"
+                            try:
+                                page.screenshot(path=path, full_page=True, timeout=90000)
+                                screenshots.append(path)
+                                print(f"تم التقاط {i+1}")
+                            except:
+                                pass
+                            time.sleep(10)
 
-            screenshots = []
-            for i in range(5):
-                path = f"debug_shot_{i+1}_{int(time.time())}.png"
-                try:
-                    page.screenshot(path=path, full_page=True, timeout=90000)
-                    screenshots.append(path)
-                    print(f"تم التقاط {i+1}")
-                except PlaywrightTimeoutError:
-                    print(f"timeout في {i+1}")
-                except Exception as e:
-                    print(f"خطأ في {i+1}: {e}")
-                time.sleep(15)
+                        # استخراج odd
+                        for scr in screenshots:
+                            if os.path.exists(scr):
+                                detected = extract_odd_from_image(scr)
+                                if detected:
+                                    odd = detected
+                                    used_url = url
+                                    used_proxy = proxy['server']
+                                    save_working_proxy(proxy)  # حفظ الـ proxy الشغال
+                                    break
 
-            odd = None
-            for scr in screenshots:
-                if os.path.exists(scr):
-                    detected = extract_odd_from_image(scr)
-                    if detected:
-                        odd = detected
-                        break
+                        if odd:
+                            break  # نجح → وقف
 
-            images_to_send = [p for p in screenshots if os.path.exists(p)]
+                        context.close()
 
-            if odd:
-                save_to_csv(odd)
-                predictor.add_odd(odd)
-                signal, conf, pred = predictor.predict()
+                    except Exception as e:
+                        print(f"فشل proxy {proxy['server']} على {url}: {str(e)}")
+                        time.sleep(10)
 
-                msg = f"""
-<b>نتيجة - رابط Crash مباشر</b>
+                if odd:
+                    break  # نجح URL → وقف
 
+            browser.close()
+
+    except Exception as e:
+        print(f"خطأ كبير في run_once: {str(e)}")
+
+    images_to_send = [p for p in screenshots if os.path.exists(p)]
+
+    if odd:
+        save_to_csv(odd)
+        predictor.add_odd(odd)
+        signal, conf, pred = predictor.predict()
+
+        msg = f"""
+<b>نتيجة Crash - نجاح!</b>
+
+URL: {used_url}
+Proxy: {used_proxy}
 odd: <code>{odd}x</code>
 إشارة: {signal}
 هدف: <code>{pred:.2f}x</code>
 ثقة: <code>{conf:.0%}</code>
 وقت: {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}
 """
-                send_telegram(msg, images_to_send)
-            else:
-                msg = f"""
-<b>ما لقاش odd</b> - رابط Crash مباشر
+        send_telegram(msg, images_to_send)
+    else:
+        msg = f"""
+<b>فشل في استخراج odd بعد محاولات متعددة</b>
 
-تحقق الصور
-غالباً اللعبة علقت في التحميل
+جربنا {len(CRASH_URLS)} روابط + proxies
+تحقق الصور المرفقة
+غالباً حجب أو مشكلة proxy - غيّر proxies أو جرب VPN
 وقت: {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}
 """
-                send_telegram(msg, images_to_send)
-
-            browser.close()
-
-    except Exception as e:
-        print(f"خطأ كبير: {str(e)}")
-        send_telegram(f"""
-<b>خطأ في البوت</b>
-
-{str(e)[:400]}
-وقت: {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}
-""")
+        send_telegram(msg, images_to_send)
 
 
 if __name__ == "__main__":
-    print("البوت شغال بالـ proxy الثابت + رابط Crash مباشر")
+    print("البوت شغال - multi-proxy + multi-mirror 2026")
     while True:
         try:
             run_once()
@@ -315,8 +376,9 @@ if __name__ == "__main__":
             print("تم إيقاف البوت")
             break
         except Exception as e:
-            print(f"خطأ في الحلقة: {e}")
-            time.sleep(120)
+            print(f"خطأ في الحلقة الرئيسية: {e}")
+            send_telegram(f"<b>خطأ كبير في البوت</b>\n{str(e)[:400]}\nوقت: {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}")
+            time.sleep(300)  # انتظر 5 دقايق لو خطأ كبير
 
         wait = random.uniform(180, 360)
         print(f"التشغيل التالي بعد ≈ {wait//60:.0f} دقيقة")
