@@ -17,7 +17,7 @@ TELEGRAM_TOKEN = "7044109545:AAF_2u9_HqVGZzFIubnIWCQ3dFm7MyQfmWw"
 CHAT_ID = "5773032750"
 CSV_FILE = "crash_odds_PRO.csv"
 
-# الـ proxy اللي ثبتناه عليه (مش هنغيره أبدًا)
+# الـ proxy الثابت اللي نجح قبل كده
 FIXED_PROXY = {"server": "http://186.182.6.191:3129"}
 
 USER_AGENTS = [
@@ -133,10 +133,10 @@ def extract_odd_from_image(image_path):
 
         if candidates:
             best = max(candidates, key=lambda x: x[1])
-            print(f"تم اكتشاف: {best[0]:.2f}x (ثقة {best[1]:.2f}) من {os.path.basename(image_path)}")
+            print(f"اكتشاف odd: {best[0]:.2f}x (ثقة {best[1]:.2f}) من {os.path.basename(image_path)}")
             return f"{best[0]:.2f}"
         else:
-            print("لم يتم العثور على odd")
+            print("ما لقاش odd")
     except Exception as e:
         print(f"خطأ OCR: {e}")
     return None
@@ -160,7 +160,7 @@ def send_telegram(message, image_paths=None):
                 try:
                     with open(path, 'rb') as photo:
                         files = {'photo': photo}
-                        data = {'chat_id': CHAT_ID, 'caption': f"سكرين شوت {i+1}/{len(image_paths)} - {os.path.basename(path)}"}
+                        data = {'chat_id': CHAT_ID, 'caption': f"صورة {i+1}/{len(image_paths)} - {os.path.basename(path)}"}
                         requests.post(photo_url, data=data, files=files, timeout=20)
                     print(f"تم إرسال الصورة {i+1}")
                     if i < len(image_paths) - 1:
@@ -201,7 +201,7 @@ def save_to_csv(odd):
 
 
 def run_once():
-    print("=== البوت شغال بالـ proxy الثابت: 186.182.6.191:3129 ===")
+    print("البوت شغال بالـ proxy الثابت + رابط Crash مباشر")
     predictor = CrashPredictor()
     history = load_csv_data()
     predictor.odds_history.extend(history[-200:])
@@ -221,35 +221,43 @@ def run_once():
             )
             page = context.new_page()
 
-            print("جاري الدخول على الرابط...")
+            CRASH_URL = "https://1x-bet.mobi/en/games/crash"
+
+            print(f"جاري الدخول على: {CRASH_URL}")
             page.goto(
-                "https://1xbet.com/en/allgamesentrance/crash",
+                CRASH_URL,
                 wait_until="domcontentloaded",
-                timeout=120000
+                timeout=180000
             )
 
             try:
-                page.wait_for_load_state("domcontentloaded", timeout=60000)
-                print("الصفحة حملت (domcontentloaded)")
+                page.wait_for_load_state("domcontentloaded", timeout=90000)
+                print("الصفحة حملت")
             except:
-                print("تحذير: مشكلة تحميل - جاري إعادة محاولة")
-                page.reload(wait_until="domcontentloaded", timeout=60000)
+                print("مشكلة تحميل - إعادة محاولة...")
+                page.reload(wait_until="domcontentloaded", timeout=90000)
 
-            # انتظر وقت طويل عشان الصفحة تكمل (الـ proxy بطيء)
-            print("بانتظار تحميل كامل...")
-            time.sleep(random.uniform(30, 60))
+            print("بانتظار تحميل اللعبة...")
+            time.sleep(random.uniform(60, 120))
+
+            try:
+                page.wait_for_selector("canvas, [class*='multiplier'], .multiplier", timeout=120000)
+                print("تم العثور على اللعبة!")
+            except:
+                print("ما لقاش multiplier")
 
             screenshots = []
-            for i in range(3):
+            for i in range(5):
                 path = f"debug_shot_{i+1}_{int(time.time())}.png"
                 try:
-                    page.screenshot(path=path, full_page=(i == 0), timeout=90000)
+                    page.screenshot(path=path, full_page=True, timeout=90000)
                     screenshots.append(path)
-                    print(f"تم التقاط {i+1}: {path}")
+                    print(f"تم التقاط {i+1}")
                 except PlaywrightTimeoutError:
-                    print(f"timeout في {i+1} - نكمل")
+                    print(f"timeout في {i+1}")
                 except Exception as e:
-                    print(f"خطأ في الصورة {i+1}: {e}")
+                    print(f"خطأ في {i+1}: {e}")
+                time.sleep(15)
 
             odd = None
             for scr in screenshots:
@@ -267,22 +275,22 @@ def run_once():
                 signal, conf, pred = predictor.predict()
 
                 msg = f"""
-<b>نتيجة البوت - Proxy ثابت</b>
+<b>نتيجة - رابط Crash مباشر</b>
 
-الـ odd: <code>{odd}x</code>
-الإشارة: {signal}
-الهدف: <code>{pred:.2f}x</code>
+odd: <code>{odd}x</code>
+إشارة: {signal}
+هدف: <code>{pred:.2f}x</code>
 ثقة: <code>{conf:.0%}</code>
-الوقت: {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}
+وقت: {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}
 """
                 send_telegram(msg, images_to_send)
             else:
                 msg = f"""
-<b>لم يتم اكتشاف odd</b> - Proxy ثابت
+<b>ما لقاش odd</b> - رابط Crash مباشر
 
-تحقق من الصور
-غالباً الصفحة علقت أو محظورة جزئيًا
-الوقت: {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}
+تحقق الصور
+غالباً اللعبة علقت في التحميل
+وقت: {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}
 """
                 send_telegram(msg, images_to_send)
 
@@ -294,12 +302,12 @@ def run_once():
 <b>خطأ في البوت</b>
 
 {str(e)[:400]}
-الوقت: {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}
+وقت: {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}
 """)
 
 
 if __name__ == "__main__":
-    print("البوت شغال بالـ proxy الثابت فقط: 186.182.6.191:3129")
+    print("البوت شغال بالـ proxy الثابت + رابط Crash مباشر")
     while True:
         try:
             run_once()
@@ -310,6 +318,6 @@ if __name__ == "__main__":
             print(f"خطأ في الحلقة: {e}")
             time.sleep(120)
 
-        wait = random.uniform(180, 360)  # 3-6 دقايق
+        wait = random.uniform(180, 360)
         print(f"التشغيل التالي بعد ≈ {wait//60:.0f} دقيقة")
         time.sleep(wait)
