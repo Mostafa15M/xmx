@@ -221,7 +221,7 @@ def run_once():
             )
             page = context.new_page()
 
-            CRASH_URL = "https://1x-bet.mobi/en/games/crash"
+            CRASH_URL = "https://1xbet.cd/en/games/crash"
 
             print(f"جاري الدخول على: {CRASH_URL}")
             page.goto(
