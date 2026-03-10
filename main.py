@@ -17,35 +17,56 @@ TELEGRAM_TOKEN = "7044109545:AAF_2u9_HqVGZzFIubnIWCQ3dFm7MyQfmWw"
 CHAT_ID = "5773032750"
 CSV_FILE = "crash_odds_PRO.csv"
 
-# القائمة الجديدة كلها port 3129 (معظمها datacenter HTTP proxies)
+# قائمة proxies كبيرة (HTTP على 3129 + بعض SOCKS5) من مصادر 2026 محدثة
+# ابدأ بأول 20–30، لو عايز تضيف أكتر من قائمتك القديمة أضف
 PROXY_SERVERS = [
+    "118.193.37.241:3129",       # HK - حديث نسبي
+    "186.182.6.191:3129",        # AR
+    "176.105.220.74:3129",       # UA
+    "103.147.249.253:3129",      # IN Squid
+    "115.248.66.131:3129",       # IN Squid
+    "179.189.200.197:3129",      # BR
+    "89.175.0.74:3129",          # RU
+    "147.45.219.101:3129",       # RU Moscow Squid
+    "134.65.238.25:3129",        # BR Vinhedo Squid
+    "150.228.172.44:3129",       # TV Starlink Squid
+    "31.169.125.138:3129",       # US Secaucus
+    "190.183.210.74:3129",       # AR Posadas
+    "77.238.236.179:3129",       # NL Amsterdam
+    "193.108.112.37:3129",       # AL Tirana Squid
+    "37.233.83.29:3129",         # LV Riga
+    "51.210.118.23:3129",        # FR OVH Squid
+    "217.174.244.117:3129",      # GB UK Squid
+    "181.78.223.36:3129",        # MX
+    "178.207.11.148:3129",       # RU Kazan
+    "154.205.155.190:3129",      # US New York Squid
+    "178.205.101.67:3129",       # RU Kazan
+    "89.108.73.200:3129",        # RU
+    "119.110.233.203:3129",      # TH Bangkok Squid
+    "134.122.185.10:3129",       # SG
+    "198.186.131.124:3129",      # DE Frankfurt
+    "212.100.65.12:3129",        # NG Lagos HTTPS/Squid
+    "8.208.94.223:3129",         # GB London
+    "92.118.169.34:3129",        # NL Dronten SOCKS5
+    "146.190.16.167:3129",       # NL Amsterdam SOCKS5
+    "91.186.218.241:3129",       # SE Stockholm HTTPS/Squid
+
+    # بعض من قائمتك القديمة (لو عايز تضيف)
     "104.207.40.177:3129",
     "209.50.181.146:3129",
     "209.50.168.67:3129",
     "216.26.236.133:3129",
-    "193.56.28.246:3129",
     "217.181.91.74:3129",
-    "209.50.176.255:3129",
     "45.3.37.86:3129",
     "104.207.54.191:3129",
     "216.26.250.25:3129",
-    "209.50.191.19:3129",
-    "209.50.176.189:3129",
-    "216.26.235.151:3129",
-    "45.3.40.177:3129",
     "65.111.15.200:3129",
     "104.207.56.54:3129",
-    "104.207.40.185:3129",
-    "104.207.54.77:3129",
-    "209.50.174.67:3129",
-    "217.181.90.130:3129",
-    # أضف الباقي إذا أردت، لكن ابدأ بـ 20–30 كفاية عشان ما يبطئش
 ]
 
-# تحويلها لصيغة Playwright (بدون username/password لأنها open proxies)
+# تحويل لصيغة Playwright (معظمها HTTP، بعض SOCKS5 ممكن تغير server لـ socks5:// لو جربت)
 PROXIES = [{"server": f"http://{server}"} for server in PROXY_SERVERS]
 
-# بعض user-agents عشوائية عشان نقلل الكشف شوية
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:129.0) Gecko/20100101 Firefox/129.0",
@@ -103,11 +124,11 @@ class CrashPredictor:
         confidence = min(0.92, 0.4 + len(recent)/200 + abs(streak_boost-1)*0.3)
 
         if final_pred > 4.0 and confidence > 0.8:
-            return "🚀 STRONG BUY", confidence, final_pred
+            return "STRONG BUY", confidence, final_pred
         elif final_pred > 2.4 and confidence > 0.7:
-            return "✅ BUY", confidence, final_pred
+            return "BUY", confidence, final_pred
         else:
-            return "⏳ WAIT", confidence, final_pred
+            return "WAIT", confidence, final_pred
 
 
 def preprocess_image(image):
@@ -131,13 +152,12 @@ def extract_odd_from_image(image_path):
         if img is None:
             return None
 
-        # مناطق متعددة عشان نزود فرصة التقاط الـ multiplier
         regions = [
             img[80:420,  550:1350],
             img[140:380, 750:1150],
             img[180:480, 650:1250],
             img[220:520, 700:1200],
-            img[100:500, 600:1300],  # منطقة إضافية
+            img[100:500, 600:1300],
         ]
 
         all_texts = []
@@ -150,7 +170,7 @@ def extract_odd_from_image(image_path):
 
         candidates = []
         for (_, text, conf) in all_texts:
-            if conf > 0.30:  # خفضنا الثقة شوية عشان نلتقط أكتر
+            if conf > 0.30:
                 match = re.search(r'(\d+\.?\d*)[xX]?', text, re.IGNORECASE)
                 if match:
                     try:
@@ -162,10 +182,10 @@ def extract_odd_from_image(image_path):
 
         if candidates:
             best = max(candidates, key=lambda x: x[1])
-            print(f"Best odd: {best[0]:.2f} (conf {best[1]:.2f})")
+            print(f"Best odd: {best[0]:.2f} (conf {best[1]:.2f}) from {image_path}")
             return f"{best[0]:.2f}"
         else:
-            print("No odd candidates found")
+            print("No odd candidates")
     except Exception as e:
         print(f"OCR error: {e}")
     return None
@@ -178,9 +198,9 @@ def send_telegram(message, image_paths=None):
     text_data = {"chat_id": CHAT_ID, "text": message, "parse_mode": "HTML"}
     try:
         requests.post(text_url, data=text_data, timeout=10)
-        print("Text message sent")
+        print("Text sent")
     except Exception as e:
-        print(f"Text send failed: {e}")
+        print(f"Text failed: {e}")
 
     if image_paths:
         photo_url = f"{base_url}/sendPhoto"
@@ -189,14 +209,11 @@ def send_telegram(message, image_paths=None):
                 try:
                     with open(path, 'rb') as photo:
                         files = {'photo': photo}
-                        data = {
-                            'chat_id': CHAT_ID,
-                            'caption': f"Debug shot {i+1}/{len(image_paths)}: {os.path.basename(path)}"
-                        }
+                        data = {'chat_id': CHAT_ID, 'caption': f"Debug {i+1}/{len(image_paths)}: {os.path.basename(path)}"}
                         requests.post(photo_url, data=data, files=files, timeout=15)
                     print(f"Photo {i+1} sent")
                     if i < len(image_paths) - 1:
-                        time.sleep(25)  # تأخير أقل شوية
+                        time.sleep(20)
                 except Exception as e:
                     print(f"Photo {i+1} failed: {e}")
 
@@ -227,9 +244,9 @@ def save_to_csv(odd):
             if not file_exists:
                 writer.writerow(['timestamp', 'odd'])
             writer.writerow([datetime.now().isoformat(), odd])
-        print(f"Saved: {odd}")
+        print(f"Saved odd: {odd}")
     except Exception as e:
-        print(f"CSV save error: {e}")
+        print(f"CSV error: {e}")
 
 
 def run_once():
@@ -245,60 +262,50 @@ def run_once():
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-dev-shm-usage'])
 
-            # حاول كل proxy بشكل عشوائي
-            random.shuffle(PROXIES)  # خلط عشان نجرب بشكل مختلف كل مرة
-
-            for proxy_dict in PROXIES[:25]:  # جرب أول 25 بس عشان السرعة
+            random.shuffle(PROXIES)
+            for proxy_dict in PROXIES[:35]:  # جرب حتى 35 proxy
                 proxy_str = proxy_dict["server"]
-                print(f"Trying → {proxy_str}")
+                print(f"Trying proxy: {proxy_str}")
 
                 try:
                     context = browser.new_context(
                         user_agent=random.choice(USER_AGENTS),
                         viewport={'width': 1920, 'height': 1080},
                         proxy=proxy_dict,
-                        ignore_https_errors=True,          # مهم مع بعض الـ proxies الضعيفة
+                        ignore_https_errors=True,
                         bypass_csp=True,
                     )
                     page = context.new_page()
 
-                    page.goto("https://1xbet.com/en/allgamesentrance/crash",
-                              wait_until="networkidle",
-                              timeout=90000)  # زيادة الـ timeout
-
-                    print(f"Success with {proxy_str}")
+                    page.goto("https://1xbet.com/en/allgamesentrance/crash", wait_until="networkidle", timeout=90000)
+                    print(f"Success with proxy: {proxy_str}")
                     used_proxy = proxy_str.replace("http://", "")
                     success = True
                     break
                 except Exception as e:
-                    print(f"Failed {proxy_str}: {str(e)[:80]}...")
+                    print(f"Proxy failed {proxy_str}: {str(e)[:80]}...")
                     continue
 
             if not success:
-                print("All proxies failed → trying direct (no proxy)")
+                print("All proxies failed, trying direct...")
                 context = browser.new_context(
                     user_agent=random.choice(USER_AGENTS),
                     viewport={'width': 1920, 'height': 1080}
                 )
                 page = context.new_page()
-                page.goto("https://1xbet.com/en/allgamesentrance/crash",
-                          wait_until="networkidle",
-                          timeout=90000)
+                page.goto("https://1xbet.com/en/allgamesentrance/crash", wait_until="networkidle", timeout=90000)
 
-            # انتظر اللعبة
             try:
-                page.wait_for_selector("canvas, [class*='multiplier'], .multiplier",
-                                       timeout=60000)
+                page.wait_for_selector("canvas, [class*='multiplier'], .multiplier", timeout=60000)
             except:
                 pass
 
-            time.sleep(random.uniform(15, 30))  # تأخير أكبر
+            time.sleep(random.uniform(15, 35))
 
-            # خد 3 صور
             screenshots = []
             for i in range(3):
-                path = f"screenshot_{i+1}_{int(time.time())}.png"
-                page.screenshot(path=path, full_page=(i==0))
+                path = f"debug_shot_{i+1}_{int(time.time())}.png"
+                page.screenshot(path=path, full_page=(i == 0))
                 screenshots.append(path)
 
             odd = None
@@ -306,7 +313,6 @@ def run_once():
                 detected = extract_odd_from_image(scr)
                 if detected:
                     odd = detected
-                    print(f"Detected {odd}x from {scr}")
                     break
 
             images_to_send = [p for p in screenshots if os.path.exists(p)]
@@ -317,32 +323,30 @@ def run_once():
                 signal, conf, pred = predictor.predict()
 
                 msg = f"""
-<b>CRASH BOT UPDATE</b>  (Proxy: {used_proxy})
+<b>CRASH BOT RESULT</b> (Proxy: {used_proxy})
 
-الحالي: <code>{odd}x</code>
-الإشارة: {signal}
-الهدف: <code>{pred:.2f}x</code>
-ثقة: <code>{conf:.0%}</code>
-{datetime.now().strftime('%H:%M:%S %d/%m/%Y')}
-                """
-
+Current: <code>{odd}x</code>
+Signal: {signal}
+Target: <code>{pred:.2f}x</code>
+Conf: <code>{conf:.0%}</code>
+Time: {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}
+"""
                 send_telegram(msg, images_to_send)
             else:
                 msg = f"""
-<b>NO ODD DETECTED</b>  (Proxy: {used_proxy})
+<b>NO ODD DETECTED</b> (Proxy: {used_proxy})
 
-Check screenshots
-Time: {datetime.now().strftime('%H:%M:%S %d/%m')}
-                """
+Check screenshots attached
+Time: {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}
+"""
                 send_telegram(msg, images_to_send)
 
             browser.close()
 
     except Exception as e:
         print(f"Critical error: {e}")
-        send_telegram(f"<b>CRASH BOT CRASHED</b>\n{str(e)[:300]}")
+        send_telegram(f"<b>CRASH BOT ERROR</b>\n{str(e)[:300]}")
 
-# ────────────────────────────────────────────────
 
 if __name__ == "__main__":
     while True:
@@ -353,7 +357,8 @@ if __name__ == "__main__":
             break
         except Exception as e:
             print(f"Loop error: {e}")
-        
-        wait = random.uniform(240, 420)  # 4–7 دقايق
-        print(f"Next attempt after \~{wait//60:.0f} min")
+            time.sleep(60)  # تأخير صغير لو خطأ عام
+
+        wait = random.uniform(180, 360)  # 3-6 دقايق
+        print(f"Next run after ≈ {wait//60} min")
         time.sleep(wait)
