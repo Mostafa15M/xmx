@@ -1,7 +1,6 @@
 import os
 import time
 import random
-import re
 import requests
 from datetime import datetime
 from playwright.sync_api import sync_playwright
@@ -10,7 +9,7 @@ from playwright.sync_api import sync_playwright
 TELEGRAM_TOKEN = "7044109545:AAF_2u9_HqVGZzFIubnIWCQ3dFm7MyQfmWw"
 CHAT_ID = "5773032750"
 
-# كل البروكسيات اللي طلبتها بالظبط
+# كل البروكسيات الـ 23 اللي كانت معاك بالظبط
 PROXY_LIST = [
     "socks5://206.189.92.74:7777", "socks5://128.199.111.243:34418",
     "socks5://134.209.100.103:56055", "socks5://13.250.36.159:48540",
@@ -24,13 +23,6 @@ PROXY_LIST = [
     "socks5://138.199.25.13:3901", "socks5://124.156.207.229:1080",
     "socks5://165.22.110.253:1080", "http://143.42.66.91:80",
     "http://8.219.97.248:80"
-]
-
-# الروابط البديلة في حال الحظر
-URLS = [
-    "https://1xbet.com/en/games/crash",
-    "https://1xbet-en.com/en/games/crash",
-    "https://ua-1x-bet.com/en/games/crash"
 ]
 
 class CrashBot:
@@ -47,33 +39,44 @@ class CrashBot:
     def run(self):
         with sync_playwright() as p:
             proxy_url = random.choice(PROXY_LIST)
-            print(f"🔄 محاولة باستخدام: {proxy_url}")
+            print(f"🔄 جاري المحاولة ببروكسي: {proxy_url}")
             
-            # أهم جزء: ignore_https_errors=True لحل مشكلة CERT_AUTHORITY_INVALID
-            browser = p.chromium.launch(headless=True, proxy={"server": proxy_url}, args=['--ignore-certificate-errors'])
-            context = browser.new_context(ignore_https_errors=True, user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            # حل مشاكل الشهادات SSL وتجاهل الأخطاء لسرعة الفتح
+            browser = p.chromium.launch(headless=True, proxy={"server": proxy_url}, args=['--ignore-certificate-errors', '--no-sandbox'])
+            context = browser.new_context(ignore_https_errors=True)
             page = context.new_page()
 
             try:
-                target_url = random.choice(URLS)
-                self.send_telegram(f"📡 <b>محاولة اتصال</b>\nالرابط: {target_url}\nالبروكسي: <code>{proxy_url}</code>")
+                # رسالة لبداية المحاولة
+                self.send_telegram(f"📡 محاولة اتصال ببروكسي: <code>{proxy_url}</code>")
                 
-                page.goto(target_url, wait_until="load", timeout=90000)
+                # الدخول للرابط مع تايم أوت معقول (40 ثانية) عشان لو البروكسي تقيل يغيره فوراً
+                page.goto("https://1xbet.com/en/games/crash", wait_until="load", timeout=40000)
                 
-                # الانتظار حتى يظهر العداد
-                page.wait_for_selector("canvas", timeout=60000)
-                time.sleep(20)
+                # فحص الحظر
+                if "Access denied" in page.content():
+                    self.send_telegram("❌ البروكسي محجوب، هجرب غيره...")
+                    return
+
+                # الانتظار لحد ما مربع اللعبة يظهر (Canvas)
+                page.wait_for_selector("canvas", timeout=30000)
+                time.sleep(15) # وقت أمان عشان الأرقام تظهر
 
                 while True:
-                    shot = "live.png"
+                    shot = "crash_now.png"
+                    # تصوير منطقة اللعبة فقط بدقة
                     page.locator("canvas").screenshot(path=shot)
-                    self.send_telegram(f"✅ <b>متصل الآن!</b>\n⏰ {datetime.now().strftime('%H:%M:%S')}", shot)
+                    self.send_telegram(f"✅ <b>العداد الآن:</b>\n⏰ {datetime.now().strftime('%H:%M:%S')}", shot)
+                    
                     if os.path.exists(shot): os.remove(shot)
-                    time.sleep(60)
+                    time.sleep(30) # تحديث كل 30 ثانية
 
             except Exception as e:
-                error_str = str(e).split('\n')[0]
-                self.send_telegram(f"⚠️ <b>فشل الاتصال:</b>\n<code>{error_str}</code>\nجاري تجربة بروكسي آخر...")
+                # لو فشل يصور الغلط عشان نشوفه
+                err_shot = "error.png"
+                try: page.screenshot(path=err_shot)
+                except: err_shot = None
+                self.send_telegram(f"⚠️ فشل الاتصال: {str(e)[:50]}", err_shot)
             finally:
                 browser.close()
 
@@ -83,4 +86,4 @@ if __name__ == "__main__":
         try:
             bot.run()
         except:
-            time.sleep(10)
+            time.sleep(5)
