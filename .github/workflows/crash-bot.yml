@@ -2,12 +2,12 @@ name: Crash Bot Monitor
 
 on:
   schedule:
-    - cron: '*/10 * * * *'   # كل 10 دقايق – غيّره لـ */5 بعد التأكد
-  workflow_dispatch:         # يدوي من Actions tab
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
 
 jobs:
   monitor:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest     # ← التغيير هنا
     timeout-minutes: 12
 
     steps:
