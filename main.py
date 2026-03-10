@@ -17,12 +17,12 @@ TELEGRAM_TOKEN = "7044109545:AAF_2u9_HqVGZzFIubnIWCQ3dFm7MyQfmWw"
 CHAT_ID = "5773032750"
 CSV_FILE = "crash_odds_PRO.csv"
 
-# User-Agents متنوعة (محلي + موبايل عشان نقلل الكشف)
+# الـ proxy اللي ثبتناه عليه (مش هنغيره أبدًا)
+FIXED_PROXY = {"server": "http://186.182.6.191:3129"}
+
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:129.0) Gecko/20100101 Firefox/129.0",
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
-    "Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36",
 ]
 
 class CrashPredictor:
@@ -121,7 +121,7 @@ def extract_odd_from_image(image_path):
 
         candidates = []
         for (_, text, conf) in all_texts:
-            if conf > 0.25:  # خفضنا لنلتقط أكثر
+            if conf > 0.25:
                 match = re.search(r'(\d+\.?\d*)[xX]?', text, re.IGNORECASE)
                 if match:
                     try:
@@ -133,12 +133,12 @@ def extract_odd_from_image(image_path):
 
         if candidates:
             best = max(candidates, key=lambda x: x[1])
-            print(f"تم اكتشاف odd: {best[0]:.2f}x (ثقة {best[1]:.2f}) من {os.path.basename(image_path)}")
+            print(f"تم اكتشاف: {best[0]:.2f}x (ثقة {best[1]:.2f}) من {os.path.basename(image_path)}")
             return f"{best[0]:.2f}"
         else:
-            print("لم يتم العثور على أي odd محتمل")
+            print("لم يتم العثور على odd")
     except Exception as e:
-        print(f"خطأ في OCR: {e}")
+        print(f"خطأ OCR: {e}")
     return None
 
 
@@ -149,9 +149,9 @@ def send_telegram(message, image_paths=None):
     text_data = {"chat_id": CHAT_ID, "text": message, "parse_mode": "HTML"}
     try:
         requests.post(text_url, data=text_data, timeout=15)
-        print("تم إرسال الرسالة النصية")
+        print("تم إرسال الرسالة")
     except Exception as e:
-        print(f"فشل إرسال النص: {e}")
+        print(f"فشل الإرسال: {e}")
 
     if image_paths:
         photo_url = f"{base_url}/sendPhoto"
@@ -160,16 +160,13 @@ def send_telegram(message, image_paths=None):
                 try:
                     with open(path, 'rb') as photo:
                         files = {'photo': photo}
-                        data = {
-                            'chat_id': CHAT_ID,
-                            'caption': f"سكرين شوت تصحيحي {i+1}/{len(image_paths)} - {os.path.basename(path)}"
-                        }
+                        data = {'chat_id': CHAT_ID, 'caption': f"سكرين شوت {i+1}/{len(image_paths)} - {os.path.basename(path)}"}
                         requests.post(photo_url, data=data, files=files, timeout=20)
                     print(f"تم إرسال الصورة {i+1}")
                     if i < len(image_paths) - 1:
                         time.sleep(25)
                 except Exception as e:
-                    print(f"فشل إرسال الصورة {i+1}: {e}")
+                    print(f"فشل الصورة {i+1}: {e}")
 
 
 def load_csv_data():
@@ -204,7 +201,7 @@ def save_to_csv(odd):
 
 
 def run_once():
-    print("=== بدء تشغيل البوت بدون proxy (استخدم VPN على جهازك) ===")
+    print("=== البوت شغال بالـ proxy الثابت: 186.182.6.191:3129 ===")
     predictor = CrashPredictor()
     history = load_csv_data()
     predictor.odds_history.extend(history[-200:])
@@ -217,6 +214,7 @@ def run_once():
             context = browser.new_context(
                 user_agent=random.choice(USER_AGENTS),
                 viewport={'width': 1920, 'height': 1080},
+                proxy=FIXED_PROXY,
                 ignore_https_errors=True,
                 bypass_csp=True,
                 java_script_enabled=True,
@@ -232,14 +230,14 @@ def run_once():
 
             try:
                 page.wait_for_load_state("domcontentloaded", timeout=60000)
-                print("الصفحة حملت بنجاح (domcontentloaded)")
-            except Exception as load_err:
-                print(f"تحذير: مشكلة في التحميل - {load_err}")
-                # محاولة إعادة تحميل مرة واحدة
-                print("جاري إعادة تحميل الصفحة...")
+                print("الصفحة حملت (domcontentloaded)")
+            except:
+                print("تحذير: مشكلة تحميل - جاري إعادة محاولة")
                 page.reload(wait_until="domcontentloaded", timeout=60000)
 
-            time.sleep(random.uniform(8, 18))
+            # انتظر وقت طويل عشان الصفحة تكمل (الـ proxy بطيء)
+            print("بانتظار تحميل كامل...")
+            time.sleep(random.uniform(30, 60))
 
             screenshots = []
             for i in range(3):
@@ -247,9 +245,9 @@ def run_once():
                 try:
                     page.screenshot(path=path, full_page=(i == 0), timeout=90000)
                     screenshots.append(path)
-                    print(f"تم التقاط الصورة {i+1}: {path}")
+                    print(f"تم التقاط {i+1}: {path}")
                 except PlaywrightTimeoutError:
-                    print(f"timeout في الصورة {i+1} - نكمل")
+                    print(f"timeout في {i+1} - نكمل")
                 except Exception as e:
                     print(f"خطأ في الصورة {i+1}: {e}")
 
@@ -269,21 +267,21 @@ def run_once():
                 signal, conf, pred = predictor.predict()
 
                 msg = f"""
-<b>نتيجة البوت (VPN mode)</b>
+<b>نتيجة البوت - Proxy ثابت</b>
 
-الـ odd الحالي: <code>{odd}x</code>
+الـ odd: <code>{odd}x</code>
 الإشارة: {signal}
 الهدف: <code>{pred:.2f}x</code>
-الثقة: <code>{conf:.0%}</code>
+ثقة: <code>{conf:.0%}</code>
 الوقت: {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}
 """
                 send_telegram(msg, images_to_send)
             else:
                 msg = f"""
-<b>لم يتم اكتشاف odd</b> (VPN mode)
+<b>لم يتم اكتشاف odd</b> - Proxy ثابت
 
-تحقق من الصور المرفقة
-غالباً: Access Denied أو الصفحة محظورة أو لم تحمل
+تحقق من الصور
+غالباً الصفحة علقت أو محظورة جزئيًا
 الوقت: {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}
 """
                 send_telegram(msg, images_to_send)
@@ -291,9 +289,9 @@ def run_once():
             browser.close()
 
     except Exception as e:
-        print(f"خطأ كبير أثناء التشغيل: {str(e)}")
+        print(f"خطأ كبير: {str(e)}")
         send_telegram(f"""
-<b>خطأ كبير في البوت</b>
+<b>خطأ في البوت</b>
 
 {str(e)[:400]}
 الوقت: {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}
@@ -301,17 +299,17 @@ def run_once():
 
 
 if __name__ == "__main__":
-    print("البوت يبدأ الآن - تأكد من تشغيل VPN (مثل Proton Free - سيرفر NL أو RO)")
+    print("البوت شغال بالـ proxy الثابت فقط: 186.182.6.191:3129")
     while True:
         try:
             run_once()
         except KeyboardInterrupt:
-            print("تم إيقاف البوت يدويًا")
+            print("تم إيقاف البوت")
             break
         except Exception as e:
-            print(f"خطأ في الحلقة الرئيسية: {e}")
+            print(f"خطأ في الحلقة: {e}")
             time.sleep(120)
 
-        wait = random.uniform(180, 420)  # 3-7 دقايق
-        print(f"المحاولة التالية بعد ≈ {wait//60:.0f} دقيقة")
+        wait = random.uniform(180, 360)  # 3-6 دقايق
+        print(f"التشغيل التالي بعد ≈ {wait//60:.0f} دقيقة")
         time.sleep(wait)
