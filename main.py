@@ -1,89 +1,75 @@
 import os
 import time
-import random
 import requests
 from datetime import datetime
 from playwright.sync_api import sync_playwright
 
-# ===== الإعدادات الأساسية =====
+# ===== الإعدادات الثابتة =====
 TELEGRAM_TOKEN = "7044109545:AAF_2u9_HqVGZzFIubnIWCQ3dFm7MyQfmWw"
 CHAT_ID = "5773032750"
+# البروكسي المعتمد بناءً على تجاربك الناجحة
+TARGET_PROXY = "socks5://128.199.111.243:34418" 
 
-# كل البروكسيات الـ 23 اللي كانت معاك بالظبط
-PROXY_LIST = [
-    "socks5://206.189.92.74:7777", "socks5://128.199.111.243:34418",
-    "socks5://134.209.100.103:56055", "socks5://13.250.36.159:48540",
-    "socks5://47.241.61.60:9050", "socks5://51.79.156.122:9050",
-    "socks5://218.185.242.117:9050", "socks5://128.199.161.225:9050",
-    "socks5://178.128.84.253:9050", "socks5://159.65.14.150:9050",
-    "http://128.199.202.122:3128", "socks5://165.22.101.15:80",
-    "socks5://209.97.175.37:9050", "http://190.104.146.244:999",
-    "http://140.246.149.224:8888", "http://101.255.94.161:8080",
-    "http://51.79.135.131:8080", "http://152.42.213.210:8080",
-    "socks5://138.199.25.13:3901", "socks5://124.156.207.229:1080",
-    "socks5://165.22.110.253:1080", "http://143.42.66.91:80",
-    "http://8.219.97.248:80"
-]
-
-class CrashBot:
-    def send_telegram(self, message, photo=None):
+class CrashMonitor:
+    def send_telegram(self, msg, photo=None):
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/"
         try:
             if photo and os.path.exists(photo):
                 with open(photo, 'rb') as f:
-                    requests.post(url + "sendPhoto", data={'chat_id': CHAT_ID, 'caption': message}, files={'photo': f}, timeout=30)
+                    requests.post(url + "sendPhoto", data={'chat_id': CHAT_ID, 'caption': msg}, files={'photo': f}, timeout=30)
             else:
-                requests.post(url + "sendMessage", data={'chat_id': CHAT_ID, 'text': message, 'parse_mode': 'HTML'}, timeout=20)
-        except: pass
+                requests.post(url + "sendMessage", data={'chat_id': CHAT_ID, 'text': msg, 'parse_mode': 'HTML'}, timeout=20)
+        except:
+            print("خطأ في إرسال التليجرام")
 
-    def run(self):
+    def start_session(self):
         with sync_playwright() as p:
-            proxy_url = random.choice(PROXY_LIST)
-            print(f"🔄 جاري المحاولة ببروكسي: {proxy_url}")
+            print(f"🚀 بدء جلسة جديدة عبر: {TARGET_PROXY}")
             
-            # حل مشاكل الشهادات SSL وتجاهل الأخطاء لسرعة الفتح
-            browser = p.chromium.launch(headless=True, proxy={"server": proxy_url}, args=['--ignore-certificate-errors', '--no-sandbox'])
-            context = browser.new_context(ignore_https_errors=True)
+            # تشغيل المتصفح مع إعدادات تخطي الحظر والشهادات
+            browser = p.chromium.launch(headless=True, proxy={"server": TARGET_PROXY}, args=['--ignore-certificate-errors', '--no-sandbox'])
+            context = browser.new_context(ignore_https_errors=True, viewport={'width': 1280, 'height': 720})
             page = context.new_page()
 
             try:
-                # رسالة لبداية المحاولة
-                self.send_telegram(f"📡 محاولة اتصال ببروكسي: <code>{proxy_url}</code>")
+                # محاولة فتح اللعبة (انتظار حتى 90 ثانية للتحميل)
+                page.goto("https://1xbet.com/en/games/crash", wait_until="load", timeout=90000)
                 
-                # الدخول للرابط مع تايم أوت معقول (40 ثانية) عشان لو البروكسي تقيل يغيره فوراً
-                page.goto("https://1xbet.com/en/games/crash", wait_until="load", timeout=40000)
+                # التأكد إن العداد (Canvas) ظهر
+                page.wait_for_selector("canvas", timeout=60000)
+                self.send_telegram("✅ <b>تم الاتصال بنجاح!</b>\nجاري سحب 10 صور (فاصل 30 ثانية)...")
                 
-                # فحص الحظر
-                if "Access denied" in page.content():
-                    self.send_telegram("❌ البروكسي محجوب، هجرب غيره...")
-                    return
-
-                # الانتظار لحد ما مربع اللعبة يظهر (Canvas)
-                page.wait_for_selector("canvas", timeout=30000)
-                time.sleep(15) # وقت أمان عشان الأرقام تظهر
-
-                while True:
-                    shot = "crash_now.png"
-                    # تصوير منطقة اللعبة فقط بدقة
-                    page.locator("canvas").screenshot(path=shot)
-                    self.send_telegram(f"✅ <b>العداد الآن:</b>\n⏰ {datetime.now().strftime('%H:%M:%S')}", shot)
+                # حلقة تكرار لـ 10 صور فقط في الجلسة الواحدة
+                for i in range(1, 11):
+                    shot_name = f"crash_{i}.png"
+                    # تصوير منطقة العداد
+                    page.locator("canvas").screenshot(path=shot_name)
                     
-                    if os.path.exists(shot): os.remove(shot)
-                    time.sleep(30) # تحديث كل 30 ثانية
+                    current_time = datetime.now().strftime('%H:%M:%S')
+                    self.send_telegram(f"📸 <b>صورة رقم ({i}/10)</b>\n⏰ الوقت: {current_time}", shot_name)
+                    
+                    # مسح الصورة بعد الإرسال
+                    if os.path.exists(shot_name): os.remove(shot_name)
+                    
+                    # الانتظار 30 ثانية قبل الصورة التالية (إلا في الصورة الأخيرة)
+                    if i < 10:
+                        time.sleep(30)
+
+                self.send_telegram("🏁 <b>انتهت الدورة (10 صور).</b>\nجاري إعادة تنشيط الصفحة لجولة جديدة...")
 
             except Exception as e:
-                # لو فشل يصور الغلط عشان نشوفه
-                err_shot = "error.png"
-                try: page.screenshot(path=err_shot)
-                except: err_shot = None
-                self.send_telegram(f"⚠️ فشل الاتصال: {str(e)[:50]}", err_shot)
+                error_details = str(e)[:100]
+                self.send_telegram(f"⚠️ <b>توقف مؤقت:</b>\n<code>{error_details}</code>\nجاري إعادة المحاولة...")
             finally:
                 browser.close()
 
 if __name__ == "__main__":
-    bot = CrashBot()
+    bot = CrashMonitor()
+    # تشغيل مستمر (كل دورة 10 صور)
     while True:
         try:
-            bot.run()
-        except:
-            time.sleep(5)
+            bot.start_session()
+            time.sleep(10) # استراحة بسيطة بين الجلسات
+        except Exception as e:
+            print(f"خطأ عام: {e}")
+            time.sleep(30)
