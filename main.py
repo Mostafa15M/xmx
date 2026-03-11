@@ -212,7 +212,7 @@ def main():
                 page.goto(
                     "https://1xlite-07241.pro/ar/games/crash",
                     wait_until="networkidle",
-                    timeout=90000
+                    timeout=900000
                 )
 
                 print("انتظار تحميل اللعبة...")
