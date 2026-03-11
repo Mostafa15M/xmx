@@ -7,16 +7,18 @@ import easyocr
 from datetime import datetime
 from playwright.sync_api import sync_playwright
 
-# ===== الإعدادات =====
+# ===== الإعدادات الأساسية =====
 TELEGRAM_TOKEN = "7044109545:AAF_2u9_HqVGZzFIubnIWCQ3dFm7MyQfmWw"
 CHAT_ID = "5773032750"
+# البروكسي اللي أثبت نجاحه في سكريناتك
 TARGET_PROXY = "socks5://128.199.111.243:34418" 
 
 class CrashAnalyst:
     def __init__(self):
-        print("⏳ جاري تشغيل محرك التحليل الذكي...")
+        print("⏳ جاري تحميل محرك التحليل وقراءة الأرقام...")
+        # تحميل محرك الذكاء الاصطناعي للقراءة
         self.reader = easyocr.Reader(['en'], gpu=False)
-        self.history = [] # هنا بنخزن الأرقام اللي اتقرأت للتحليل
+        self.results_history = []
 
     def send_telegram(self, msg, photo=None):
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/"
@@ -28,58 +30,62 @@ class CrashAnalyst:
                 requests.post(url + "sendMessage", data={'chat_id': CHAT_ID, 'text': msg, 'parse_mode': 'HTML'}, timeout=20)
         except: pass
 
-    def analyze_odds(self, current_odd):
-        """تحليل بسيط للأرقام المكتشفة"""
+    def perform_analysis(self, current_val):
+        """تحليل الأرقام المكتشفة لتقديم توقعات"""
         try:
-            val = float(current_odd)
-            self.history.append(val)
-            if len(self.history) > 10: self.history.pop(0)
+            val = float(current_val)
+            self.results_history.append(val)
+            if len(self.results_history) > 10: self.results_history.pop(0)
             
-            avg = sum(self.history) / len(self.history)
-            status = "📈 اتجاه صاعد" if val > avg else "📉 اتجاه هابط"
-            return f"\n📊 <b>التحليل:</b> {status}\n平均 المتوسط: {avg:.2f}x"
-        except: return ""
+            avg = sum(self.results_history) / len(self.results_history)
+            trend = "📈 صعود" if val >= avg else "📉 هبوط"
+            return f"\n\n📊 <b>تحليل البيانات:</b>\nاتجاه السوق: {trend}\nمتوسط آخر 10 جولات: {avg:.2f}x"
+        except: return "\n\n⚠️ جاري جمع بيانات كافية للتحليل..."
 
-    def start_session(self):
+    def start_monitoring(self):
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True, proxy={"server": TARGET_PROXY}, args=['--ignore-certificate-errors', '--no-sandbox'])
             context = browser.new_context(ignore_https_errors=True)
             page = context.new_page()
 
             try:
+                # محاولة الدخول (90 ثانية أمان)
                 page.goto("https://1xbet.com/en/games/crash", wait_until="load", timeout=90000)
                 page.wait_for_selector("canvas", timeout=60000)
-                
-                self.send_telegram("✅ <b>تم تفعيل نظام التحليل!</b>")
+                self.send_telegram("🧠 <b>تم تفعيل نظام التحليل الذكي!</b>")
 
                 for i in range(1, 11):
-                    shot = f"analyze_{i}.png"
-                    page.locator("canvas").screenshot(path=shot)
+                    shot_path = f"analysis_step_{i}.png"
+                    # لقطة لمنطقة العداد
+                    page.locator("canvas").screenshot(path=shot_path)
                     
-                    # قراءة الرقم من الصورة
-                    results = self.reader.readtext(shot)
-                    text_found = ""
-                    for (_, text, _) in results:
+                    # عملية القراءة (OCR)
+                    ocr_results = self.reader.readtext(shot_path)
+                    detected_odd = ""
+                    for (_, text, _) in ocr_results:
                         match = re.search(r'(\d+[\.,]\d+)', text)
                         if match:
-                            text_found = match.group(1).replace(',', '.')
+                            detected_odd = match.group(1).replace(',', '.')
                             break
                     
-                    analysis = self.analyze_odds(text_found) if text_found else "\n❓ لم يتم تحديد الرقم بدقة"
+                    # دمج القراءة مع التحليل
+                    stats = self.perform_analysis(detected_odd) if detected_odd else ""
+                    msg = f"📸 <b>جلسة {i}/10</b>\n🎯 الرقم المرصود: <code>{detected_odd or '---'}x</code>{stats}"
                     
-                    msg = f"📸 <b>جلسة تحليل ({i}/10)</b>\n🎯 الرقم المرصود: <code>{text_found or '---'}x</code>{analysis}"
-                    self.send_telegram(msg, shot)
+                    self.send_telegram(msg, shot_path)
                     
-                    if os.path.exists(shot): os.remove(shot)
-                    time.sleep(30)
+                    if os.path.exists(shot_path): os.remove(shot_path)
+                    time.sleep(30) # الفاصل الزمني المطلوب
 
             except Exception as e:
-                self.send_telegram(f"⚠️ خطأ في التحليل: {str(e)[:50]}")
+                self.send_telegram(f"⚠️ خطأ: {str(e)[:50]}")
             finally:
                 browser.close()
 
 if __name__ == "__main__":
     bot = CrashAnalyst()
     while True:
-        bot.start_session()
-        time.sleep(10)
+        try:
+            bot.start_monitoring()
+            time.sleep(10)
+        except: time.sleep(20)
