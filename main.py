@@ -210,7 +210,7 @@ def main():
 
                 print("جاري الدخول على الصفحة...")
                 page.goto(
-                    "https://ma-1xbet.com/en/games/crash",
+                    "https://1xlite-07241.pro/ar/games/crash",
                     wait_until="networkidle",
                     timeout=90000
                 )
