@@ -1,7 +1,7 @@
 import os
 import time
 import re
-import cv2
+import csv
 import requests
 import easyocr
 from datetime import datetime
@@ -10,15 +10,21 @@ from playwright.sync_api import sync_playwright
 # ===== الإعدادات الأساسية =====
 TELEGRAM_TOKEN = "7044109545:AAF_2u9_HqVGZzFIubnIWCQ3dFm7MyQfmWw"
 CHAT_ID = "5773032750"
-# البروكسي اللي أثبت نجاحه في سكريناتك
+# البروكسي اللي شغال معاك ومخطى الحظر
 TARGET_PROXY = "socks5://128.199.111.243:34418" 
+# ملف قاعدة البيانات الخاص بك
+DATA_FILE = "crash_odds_PRO.csv"
 
-class CrashAnalyst:
+class CrashMaster:
     def __init__(self):
-        print("⏳ جاري تحميل محرك التحليل وقراءة الأرقام...")
-        # تحميل محرك الذكاء الاصطناعي للقراءة
+        print("⏳ جاري تحضير محرك الذكاء الاصطناعي...")
         self.reader = easyocr.Reader(['en'], gpu=False)
-        self.results_history = []
+        self.last_saved_odd = None
+        # إنشاء الملف وتجهيز العناوين لو مش موجود
+        if not os.path.exists(DATA_FILE):
+            with open(DATA_FILE, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(["Time", "Exploded_Odd", "Next_Prediction"])
 
     def send_telegram(self, msg, photo=None):
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/"
@@ -30,62 +36,81 @@ class CrashAnalyst:
                 requests.post(url + "sendMessage", data={'chat_id': CHAT_ID, 'text': msg, 'parse_mode': 'HTML'}, timeout=20)
         except: pass
 
-    def perform_analysis(self, current_val):
-        """تحليل الأرقام المكتشفة لتقديم توقعات"""
+    def log_and_predict(self, final_odd):
+        """بيحط الاود الي فرقع في الملف ويحسب التوقع القادم بناءً على التاريخ"""
         try:
-            val = float(current_val)
-            self.results_history.append(val)
-            if len(self.results_history) > 10: self.results_history.pop(0)
-            
-            avg = sum(self.results_history) / len(self.results_history)
-            trend = "📈 صعود" if val >= avg else "📉 هبوط"
-            return f"\n\n📊 <b>تحليل البيانات:</b>\nاتجاه السوق: {trend}\nمتوسط آخر 10 جولات: {avg:.2f}x"
-        except: return "\n\n⚠️ جاري جمع بيانات كافية للتحليل..."
+            history = []
+            if os.path.exists(DATA_FILE):
+                with open(DATA_FILE, 'r') as f:
+                    reader = csv.reader(f)
+                    next(reader) 
+                    history = [float(row[1]) for row in reader if row[1]]
 
-    def start_monitoring(self):
+            # معادلة التوقع للجولة القادمة
+            prediction = 1.20
+            if len(history) >= 3:
+                # بيحلل متوسط آخر 5 جولات عشان يتوقع الجاية
+                avg = sum(history[-5:]) / len(history[-5:])
+                prediction = round(avg * 0.88, 2) if avg < 2.5 else 1.60
+            
+            # تسجيل الرقم اللي فرقع دلوقتى في ملف الـ CSV
+            with open(DATA_FILE, 'a', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow([datetime.now().strftime('%H:%M:%S'), final_odd, prediction])
+            
+            return prediction
+        except: return 1.15
+
+    def start_engine(self):
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True, proxy={"server": TARGET_PROXY}, args=['--ignore-certificate-errors', '--no-sandbox'])
             context = browser.new_context(ignore_https_errors=True)
             page = context.new_page()
 
             try:
-                # محاولة الدخول (90 ثانية أمان)
+                # محاولة الدخول مع معالجة الـ Timeout اللي كانت بتظهرلك
                 page.goto("https://1xbet.com/en/games/crash", wait_until="load", timeout=90000)
                 page.wait_for_selector("canvas", timeout=60000)
-                self.send_telegram("🧠 <b>تم تفعيل نظام التحليل الذكي!</b>")
+                self.send_telegram("✅ <b>النظام المتكامل جاهز!</b>\nجاري رصد الجولات وتحديث ملف الـ CSV...")
 
-                for i in range(1, 11):
-                    shot_path = f"analysis_step_{i}.png"
-                    # لقطة لمنطقة العداد
-                    page.locator("canvas").screenshot(path=shot_path)
+                while True:
+                    shot = "live_round.png"
+                    page.locator("canvas").screenshot(path=shot)
                     
-                    # عملية القراءة (OCR)
-                    ocr_results = self.reader.readtext(shot_path)
-                    detected_odd = ""
-                    for (_, text, _) in ocr_results:
+                    # قراءة الـ Odd من الشاشة
+                    results = self.reader.readtext(shot)
+                    current_odd = None
+                    for (_, text, _) in results:
                         match = re.search(r'(\d+[\.,]\d+)', text)
                         if match:
-                            detected_odd = match.group(1).replace(',', '.')
+                            current_odd = match.group(1).replace(',', '.')
                             break
                     
-                    # دمج القراءة مع التحليل
-                    stats = self.perform_analysis(detected_odd) if detected_odd else ""
-                    msg = f"📸 <b>جلسة {i}/10</b>\n🎯 الرقم المرصود: <code>{detected_odd or '---'}x</code>{stats}"
-                    
-                    self.send_telegram(msg, shot_path)
-                    
-                    if os.path.exists(shot_path): os.remove(shot_path)
-                    time.sleep(30) # الفاصل الزمني المطلوب
+                    # لو الطيارة فرقعت (الرقم ثبت وتغير عن اللي فات)
+                    if current_odd and current_odd != self.last_saved_odd:
+                        self.last_saved_odd = current_odd
+                        # تسجيل في الملف وحساب التوقع
+                        next_pred = self.log_and_predict(current_odd)
+                        
+                        msg = f"🏁 <b>فرقعت عند:</b> <code>{current_odd}x</code>\n"
+                        msg += f"🔮 <b>التوقع للجولة الجاية:</b> <code>{next_pred}x</code>\n"
+                        msg += f"📂 تم التحديث في <code>{DATA_FILE}</code>"
+                        
+                        self.send_telegram(msg, shot)
+                        print(f"Recorded to CSV: {current_odd}x")
+
+                    if os.path.exists(shot): os.remove(shot)
+                    time.sleep(12) # فحص مستمر كل جولة
 
             except Exception as e:
-                self.send_telegram(f"⚠️ خطأ: {str(e)[:50]}")
+                # لو حصل أي Timeout في الصفحة بيحاول يفتحها تاني
+                print(f"Restarting due to: {e}")
+                time.sleep(15)
             finally:
                 browser.close()
 
 if __name__ == "__main__":
-    bot = CrashAnalyst()
+    bot = CrashMaster()
     while True:
-        try:
-            bot.start_monitoring()
-            time.sleep(10)
+        try: bot.start_engine()
         except: time.sleep(20)
