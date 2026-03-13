@@ -14,11 +14,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      # 2️⃣ Setup Python
+      # 2️⃣ Setup Python 3.10
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: 3.10  # تم تحديث النسخة هنا
+          python-version: 3.10
 
       # 3️⃣ Install dependencies
       - name: Install dependencies
