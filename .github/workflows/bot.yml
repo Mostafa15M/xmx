@@ -3,31 +3,32 @@ name: Crash WSS Telegram Bot
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/30 * * * *" # كل 30 دقيقة لإعادة تشغيل البوت
+    - cron: "*/30 * * * *" # Runs every 30 minutes
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout code
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4 # Updated to v4
 
-      # 2️⃣ Setup Python (نسخة موجودة ومضمونة)
       - name: Setup Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5 # Updated to v5
         with:
-          python-version: 3.10  # النسخة الصحيحة
+          python-version: '3.10'
+          cache: 'pip' # This helps speed up future runs
 
-      # 3️⃣ Install dependencies
       - name: Install dependencies
-        run: pip install --upgrade pip && pip install -r requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-      # 4️⃣ Run bot
       - name: Run bot
+        env:
+          # If your bot uses secret tokens, make sure they are added in GitHub Settings > Secrets
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }} 
         run: python bot.py
 
-      # 5️⃣ Run analyzer
       - name: Run analyzer
         run: python analyzer.py
