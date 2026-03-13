@@ -23,7 +23,7 @@ def send_msg(msg):
     try:
         requests.post(url, data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"})
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Error sending message: {e}")
 
 def save_odds(value):
     with open(FILE_NAME, "a", newline="") as f:
@@ -34,7 +34,7 @@ def save_odds(value):
 def on_message(ws, message):
     try:
         multiplier = None
-        # محاولة البحث عن رقم عشري في الرسالة (الأكثر ضماناً)
+        # البحث عن رقم عشري في الرسالة المستلمة
         numbers = re.findall(r"(\d+\.\d+)", message)
         if numbers:
             multiplier = float(numbers[0])
@@ -51,7 +51,7 @@ def on_open(ws):
 def start_ws():
     global WSS
     if not WSS: return
-    # تصحيح الرابط تلقائياً
+    # تصحيح بروتوكول الرابط تلقائياً
     final_url = WSS.replace("Wss://", "wss://").replace("WSS://", "wss://")
     ws = websocket.WebSocketApp(final_url, on_message=on_message, on_open=on_open)
     ws.run_forever()
@@ -70,16 +70,16 @@ async def setwss(update: Update, context: ContextTypes.DEFAULT_TYPE):
     WS_THREAD = threading.Thread(target=start_ws, daemon=True)
     WS_THREAD.start()
 
-# --- دالة التحليل المصححة (تحل مشكلة الـ Concatenate) ---
+# --- دالة التحليل المصححة لمنع خطأ Concatenate ---
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not os.path.exists(FILE_NAME):
         await update.message.reply_text("❌ لا توجد بيانات مسجلة بعد.")
         return
     try:
-        # قراءة البيانات وتسمية العمود
+        # قراءة البيانات وتسمية العمود لمنع الأخطاء
         df = pd.read_csv(FILE_NAME, names=["multiplier"])
         if df.empty:
-            await update.message.reply_text("📭 الملف فارغ.")
+            await update.message.reply_text("📭 سجل البيانات فارغ.")
             return
 
         total = len(df)
@@ -87,7 +87,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         high = len(df[df["multiplier"] > 2])
         low = len(df[df["multiplier"] <= 2])
 
-        # استخدام f-string يحول الأرقام لنصوص تلقائياً ويمنع الخطأ
+        # استخدام f-strings يضمن تحويل الأرقام لنصوص بشكل آمن
         report = (
             f"📊 *تقرير تحليل Crash:*\n\n"
             f"🔢 إجمالي الجولات: {total}\n"
@@ -106,5 +106,5 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("setwss", setwss))
     app.add_handler(CommandHandler("stats", stats))
     
-    print("Bot is running...")
+    print("Bot is starting...")
     app.run_polling()
