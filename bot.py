@@ -56,17 +56,20 @@ def start_ws():
 
 # ================== Telegram commands ===================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # رسالة ترحيب
     await update.message.reply_text(
-        "👋 Crash WSS Bot\nSend WSS using:\n/setwss wss://server"
+        "👋 مرحبًا! البوت شغال ✅\n"
+        "ارسل رابط WSS الخاص باللعبة باستخدام:\n"
+        "/setwss wss://server"
     )
 
 async def setwss(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global WSS, WS_THREAD
     if not context.args:
-        await update.message.reply_text("Usage:\n/setwss wss://server")
+        await update.message.reply_text("استخدام الأمر:\n/setwss wss://server")
         return
     WSS = context.args[0]
-    await update.message.reply_text(f"Connecting to WSS:\n{WSS}")
+    await update.message.reply_text(f"📡 جاري الاتصال بالـ WSS:\n{WSS}")
 
     if WS_THREAD is None:
         WS_THREAD = threading.Thread(target=start_ws)
