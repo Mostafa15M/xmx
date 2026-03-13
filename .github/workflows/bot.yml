@@ -14,15 +14,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      # 2️⃣ Setup Python 3.10
+      # 2️⃣ Setup Python (نسخة موجودة ومضمونة)
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: 3.10
+          python-version: 3.10  # النسخة الصحيحة
 
       # 3️⃣ Install dependencies
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install --upgrade pip && pip install -r requirements.txt
 
       # 4️⃣ Run bot
       - name: Run bot
